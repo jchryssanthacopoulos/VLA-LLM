@@ -11,7 +11,11 @@ EXAMPLE_COMMUNITY_DATA = {
             "parking_fee_term": "Monthly",
             "parking_notes": "noties parking available"
         }
-    ]
+    ],
+    "pets": {
+        "fee": 50.0,
+        "policy": "Pets Allowed"
+    }
 }
 
 
@@ -39,5 +43,11 @@ def community_dict_to_prompt(community_dict: Dict) -> str:
             prompt += f"     Parking notes: {option['parking_notes']}\n"
     else:
         prompt += "There are no parking options available."
+
+    # pets
+    pet_policy = community_dict['pets']
+    if prompt:
+        prompt += "\n"
+    prompt += f"Pet policy: {pet_policy['policy']}. Extra fee for pets: {pet_policy['fee']}"
 
     return prompt

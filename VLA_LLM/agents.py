@@ -17,7 +17,7 @@ from VLA_LLM.config import OPENAI_API_KEY
 
 class ZeroShotVLAAgent:
 
-    def __init__(self, temperature: float, prefix: str, community_info: str, tools: List[BaseTool]):
+    def __init__(self, temperature: float, prefix: str, tools: List[BaseTool]):
         """Create a zero-shot VLA agent.
 
         Args:
@@ -26,7 +26,7 @@ class ZeroShotVLAAgent:
             tools: List of tools the agent has access to
 
         """
-        prefix = prefix.format(community_info=community_info)
+        # prefix = prefix.format(community_info=community_info)
 
         suffix = (
             "Chat history:\n\n"
@@ -34,6 +34,9 @@ class ZeroShotVLAAgent:
             "Prospect question:\n\n"
             "{input}\n\n"
             "{agent_scratchpad}"
+            # "Question: {input}\n"
+            # "Thought: {agent_scratchpad}\n"
+            # "Action:"
         )
         prompt = ZeroShotAgent.create_prompt(
             tools,
@@ -56,7 +59,23 @@ class ZeroShotVLAAgent:
 class ChatConversationalVLAAgent:
 
     def __init__(self, temperature: float, tools: List[BaseTool]):
+        """Create a chat conversational VLA agent.
+
+        Args:
+            temperature: Temperature to use in underlying LLM
+            tools: List of tools the agent has access to
+
+        """
+        # NOTE: I don't think this works
+        # from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
+        # template = "You are a helpful assistant that translates {input_language} to {output_language}."
+        # system_message_prompt = SystemMessagePromptTemplate.from_template(template)
+        # human_template = "{text}"
+        # human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
+        # chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
+
         llm = ChatOpenAI(temperature=temperature, openai_api_key=OPENAI_API_KEY)
+        # llm = OpenAI(model_name="gpt-3.5-turbo",temperature=temperature, openai_api_key=OPENAI_API_KEY)
 
         memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
 
