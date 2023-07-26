@@ -1,6 +1,11 @@
 """Place to store different prompts."""
 
 
+# from langchain.prompts import PromptTemplate
+# prompt = PromptTemplate.from_template(f"{prompts.prompt_2}\n\n{{prospect_message}}")
+# prompt.format(community_info=community_info)
+
+
 prompt_two_tool_concise = (
     "You are a leasing agent at a large multifamily apartment building talking with a prospect interested in "
     "renting one of your units. Your job is to answer questions about the community based on the information below. "

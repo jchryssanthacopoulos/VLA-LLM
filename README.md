@@ -19,6 +19,8 @@ pip install -r requirements
 
 If you want to use the OpenAI models, copy `.env.example` to `.env` and fill in with your OpenAI API key.
 
+You may also need to enter your Chuck API key so that the Funnel VLA API can be called.
+
 To run a notebook, spin up a Jupyter server and open up a notebook in the `notebooks` directory:
 
 ```
