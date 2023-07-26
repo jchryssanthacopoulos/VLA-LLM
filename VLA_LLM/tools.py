@@ -8,13 +8,13 @@ from langchain.callbacks.manager import AsyncCallbackManagerForToolRun
 from langchain.callbacks.manager import CallbackManagerForToolRun
 from langchain.tools import BaseTool
 from langchain.tools.base import ToolException
-from pydantic import BaseModel
 from pydantic import Field
+from pydantic import BaseModel
 
 
 AVAILABLE_APPOINTMENT_TIMES = {
-    '2023-07-26': ['09:00:00', '10:00:00', '11:00:00'],
-    '2023-07-27': ['12:00:00', '13:00:00', '14:00:00']
+    '2023-07-27': ['09:00:00', '10:00:00', '11:00:00'],
+    '2023-07-28': ['12:00:00', '13:00:00', '14:00:00']
 }
 
 
