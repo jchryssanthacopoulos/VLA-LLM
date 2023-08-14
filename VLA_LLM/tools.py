@@ -1,6 +1,7 @@
 """Set of tools the agent has access to."""
 
 import datetime
+from typing import Dict
 from typing import Optional
 from typing import Type
 
@@ -28,7 +29,108 @@ class AppointmentsAndAvailabilitySchema(BaseModel):
     appointment_time: str = Field(description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format")
 
 
-class AppointmentSchedulerTool(BaseTool):
+class BaseSchedulerTool:
+    """Class for interacting with the Funnel API to get tour information and return a response back to the LLM."""
+
+    AGENT_RESPONSE_PROBLEM_SCHEDULING = (
+        "It looks like there was a problem booking your tour. I will speak to another agent and get back to you."
+    )
+    AGENT_RESPONSE_SUCCESSFULLY_SCHEDULED = "Scheduled successfully for {apt_time} on {apt_date}!"
+    AGENT_RESPONSE_OUTSIDE_OF_OFFICE_HOURS = (
+        "The time you requested is outside of office hours. Does another time work for you?"
+    )
+    AGENT_RESPONSE_TOUR_SAME_TIME = "It looks like you already have an appointment at that time."
+    AGENT_RESPONSE_TIME_UNAVAILABLE = "Appointment could not be booked because appointment time is unavailable."
+    AGENT_RESPONSE_NO_AVAILABLE_TIMES = "There are no available times on the requested date."
+    AGENT_RESPONSE_NEXT_AVAILABLE_TIMES = "The next available appointment times on that date are {avail_times}."
+
+    def try_to_book_for_time(self, datetime_obj: datetime.datetime, client_id: int, group_id: int) -> str:
+        """Attempt to book for provided time, returning message about whether it was successful.
+
+        Args:
+            appt_time: Time to schedule for
+            client_id: ID of client to schedule for
+            group_id: ID of group
+
+        Returns:
+            Agent response back to the prospect
+
+        """
+        response = schedule_appointment(datetime_obj, client_id, group_id)
+
+        errors = response.get("errors")
+
+        if errors:
+            return self._parse_scheduling_errors(errors)
+
+        scheduled_appt = response.get("appointment", {}).get("start")
+
+        if scheduled_appt:
+            d = datetime.datetime.strptime(scheduled_appt, '%Y-%m-%dT%H:%M:%S')
+            return self.AGENT_RESPONSE_SUCCESSFULLY_SCHEDULED.format(
+                apt_time=d.strftime('%H:%M'), apt_date=d.strftime('%Y-%m-%d')
+            )
+
+        return self.AGENT_RESPONSE_PROBLEM_SCHEDULING
+
+    def get_available_appointment_times(self, datetime_obj: datetime.datetime, group_id: int, api_key: str) -> str:
+        """Get available appointment times on provided date.
+
+        Args:
+            datetime_obj: Date to get available times for
+            group_id: ID of group
+            api_key: API key to access times for given group ID
+
+        Returns:
+            Agent response back to the prospect
+
+        """
+        appt_times = available_appointment_times(datetime_obj, group_id, api_key)
+
+        if not appt_times:
+            return self.AGENT_RESPONSE_NO_AVAILABLE_TIMES
+
+        # limit to maximum that should be displayed
+        appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
+
+        return self.AGENT_RESPONSE_NEXT_AVAILABLE_TIMES.format(avail_times=', '.join(appt_times))
+
+    def _parse_scheduling_errors(self, errors: Dict) -> str:
+        """Parse scheduling error and return response.
+
+        Args:
+            errors: Dictionary of errors to parse
+
+        Return:
+            Agent response back to the prospect
+
+        """
+        error_type = errors.get("error")
+
+        if error_type:
+            if error_type == "Client should not be handled by virtual agent.":
+                return self.AGENT_RESPONSE_PROBLEM_SCHEDULING
+
+            # a place to handle other errors
+            return ""
+
+        error_type = errors.get("errors", {}).get("appointment", {}).get("start", [])
+
+        if error_type:
+            if error_type == ["No appointments available at the selected time."]:
+                return self.AGENT_RESPONSE_TIME_UNAVAILABLE
+
+            if error_type == ['Selected time is outside tour hours.']:
+                return self.AGENT_RESPONSE_OUTSIDE_OF_OFFICE_HOURS
+
+            if error_type == ['Prospect has a conflicting appointment at the same time.']:
+                return self.AGENT_RESPONSE_TOUR_SAME_TIME
+
+        # catch-all for all other errors
+        return self.AGENT_RESPONSE_PROBLEM_SCHEDULING
+
+
+class AppointmentSchedulerTool(BaseTool, BaseSchedulerTool):
     """Allows the agent to book an appointment."""
 
     name = "appointment_scheduler"
@@ -54,21 +156,14 @@ class AppointmentSchedulerTool(BaseTool):
                 "Provide the appointment time in YYYY-MM-DD HH:MM:SS format and try again."
             )
 
-        was_scheduled_successfully = schedule_appointment(d, self.client_id, self.group_id)
-
-        if not was_scheduled_successfully:
-            return (
-                "Appointment could not be booked because appointment time is unavailable."
-            )
-
-        return f"Scheduled successfully for {d.strftime('%H:%M:%S')} on {d.strftime('%Y-%m-%d')}!"
+        return self.try_to_book_for_time(d, self.client_id, self.group_id)
 
     async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Use the tool asynchronously."""
         return "Not implemented"
 
 
-class AppointmentAvailabilityTool(BaseTool):
+class AppointmentAvailabilityTool(BaseTool, BaseSchedulerTool):
     """Allows the agent to check appointment availability for a given date."""
 
     name = "appointment_availability"
@@ -90,22 +185,14 @@ class AppointmentAvailabilityTool(BaseTool):
                 "The agent should provide it in YYYY-MM-DD format, then run again."
             )
 
-        appt_times = available_appointment_times(d, self.group_id, self.api_key)
-
-        if not appt_times:
-            return "There are no available times on the requested date."
-
-        # limit to maximum that should be displayed
-        appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
-
-        return f"The next available appointment times on that date are {', '.join(appt_times)}."
+        return self.get_available_appointment_times(d, self.group_id, self.api_key)
 
     async def _arun(self, appointment_date: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Use the tool asynchronously."""
         return "Not implemented"
 
 
-class AppointmentSchedulerAndAvailabilityTool(BaseTool):
+class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
     """Allows the agent to book an appointment or check appointment availability."""
 
     name = "appointment_scheduler_availability"
@@ -135,31 +222,15 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool):
                         "The agent should provide it in YYYY-MM-DD format, then run again."
                     )
 
-                appt_times = available_appointment_times(d, self.group_id, self.api_key)
+                return self.get_available_appointment_times(d, self.group_id, self.api_key)
 
-                if not appt_times:
-                    return "There are no available times on the requested date."
+            return self.try_to_book_for_time(d, self.client_id, self.group_id)
 
-                # limit to maximum that should be displayed
-                appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
-
-                return f"The next available appointment times on that date are {', '.join(appt_times)}."
-
-            return self._try_to_book_for_time(d)
-
-        return self._try_to_book_for_time(d)
+        return self.try_to_book_for_time(d, self.client_id, self.group_id)
 
     async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Use the tool asynchronously."""
         return "Not implemented"
-
-    def _try_to_book_for_time(self, datetime_obj):
-        was_scheduled_successfully = schedule_appointment(datetime_obj, self.client_id, self.group_id)
-
-        if not was_scheduled_successfully:
-            return "Appointment could not be booked because appointment time is unavailable."
-
-        return f"Scheduled successfully for {datetime_obj.strftime('%H:%M:%S')} on {datetime_obj.strftime('%Y-%m-%d')}!"
 
 
 class CurrentTimeTool(BaseTool):

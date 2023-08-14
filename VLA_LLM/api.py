@@ -2,6 +2,7 @@
 
 import datetime
 import requests
+from typing import Dict
 from typing import List
 
 from VLA_LLM import config
@@ -26,7 +27,7 @@ def get_community_info(community_id: int):
     return {}
 
 
-def schedule_appointment(appt_time: datetime.datetime, client_id: int, group_id: int) -> bool:
+def schedule_appointment(appt_time: datetime.datetime, client_id: int, group_id: int) -> Dict:
     """Attempt to schedule appointment for given time.
 
     Args:
@@ -35,7 +36,7 @@ def schedule_appointment(appt_time: datetime.datetime, client_id: int, group_id:
         group_id: ID of group
 
     Returns:
-        Whether scheduling was successful
+        Response from API
 
     """
     url = f"https://nestiolistings.com/api/virtualagent/clients/{client_id}/groups/{group_id}/appointments/"
@@ -53,7 +54,7 @@ def schedule_appointment(appt_time: datetime.datetime, client_id: int, group_id:
         url, json=data, headers={'Content-Type': 'application/json'}, auth=(config.CHUCK_API_KEY, None)
     )
 
-    return response.status_code == 200
+    return response.json()
 
 
 def available_appointment_times(appt_date: datetime.datetime, group_id: int, api_key: str) -> List[str]:
