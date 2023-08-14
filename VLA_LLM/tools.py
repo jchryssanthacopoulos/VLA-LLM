@@ -11,17 +11,13 @@ from langchain.tools.base import ToolException
 from pydantic import Field
 from pydantic import BaseModel
 
-
-AVAILABLE_APPOINTMENT_TIMES = {
-    '2023-07-27': ['09:00:00', '10:00:00', '11:00:00'],
-    '2023-07-28': ['12:00:00', '13:00:00', '14:00:00']
-}
+from VLA_LLM import config
+from VLA_LLM.api import available_appointment_times
+from VLA_LLM.api import schedule_appointment
 
 
 class AppointmentsSchema(BaseModel):
-    appointment_time: str = Field(
-        description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format"
-    )
+    appointment_time: str = Field(description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format")
 
 
 class AppointmentDateSchema(BaseModel):
@@ -29,9 +25,7 @@ class AppointmentDateSchema(BaseModel):
 
 
 class AppointmentsAndAvailabilitySchema(BaseModel):
-    appointment_time: str = Field(
-        description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format"
-    )
+    appointment_time: str = Field(description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format")
 
 
 class AppointmentSchedulerTool(BaseTool):
@@ -46,6 +40,10 @@ class AppointmentSchedulerTool(BaseTool):
     args_schema: Type[AppointmentsSchema] = AppointmentsSchema
     handle_tool_error = True
 
+    # add new fields to be passed in when instantiating the class
+    client_id: int
+    group_id: int
+
     def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         # check if time is in the correct format
         try:
@@ -56,18 +54,14 @@ class AppointmentSchedulerTool(BaseTool):
                 "Provide the appointment time in YYYY-MM-DD HH:MM:SS format and try again."
             )
 
-        appt_date = d.strftime('%Y-%m-%d')
-        if appt_date not in AVAILABLE_APPOINTMENT_TIMES:
-            return "Appointment could not be booked because appointment day is unavailable."
+        was_scheduled_successfully = schedule_appointment(d, self.client_id, self.group_id)
 
-        appt_time = d.strftime('%H:%M:%S')
-        if appt_time not in AVAILABLE_APPOINTMENT_TIMES[appt_date]:
+        if not was_scheduled_successfully:
             return (
-                "Appointment could not be booked because appointment time is unavailable. "
-                f"Alternative appointment times on that date are {', '.join(AVAILABLE_APPOINTMENT_TIMES[appt_date])}."
+                "Appointment could not be booked because appointment time is unavailable."
             )
 
-        return f"Scheduled successfully for {appt_time} on {appt_date}!"
+        return f"Scheduled successfully for {d.strftime('%H:%M:%S')} on {d.strftime('%Y-%m-%d')}!"
 
     async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Use the tool asynchronously."""
@@ -82,6 +76,10 @@ class AppointmentAvailabilityTool(BaseTool):
     args_schema: Type[AppointmentDateSchema] = AppointmentDateSchema
     handle_tool_error = True
 
+    # add new fields to be passed in when instantiating the class
+    group_id: int
+    api_key: str
+
     def _run(self, appointment_date: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Use the tool."""
         try:
@@ -92,13 +90,15 @@ class AppointmentAvailabilityTool(BaseTool):
                 "The agent should provide it in YYYY-MM-DD format, then run again."
             )
 
-        appt_date = d.strftime('%Y-%m-%d')
-        if appt_date not in AVAILABLE_APPOINTMENT_TIMES:
+        appt_times = available_appointment_times(d, self.group_id, self.api_key)
+
+        if not appt_times:
             return "There are no available times on the requested date."
 
-        return (
-            f"Available appointment times on that date are {', '.join(AVAILABLE_APPOINTMENT_TIMES[appt_date])}. "
-        )
+        # limit to maximum that should be displayed
+        appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
+
+        return f"The next available appointment times on that date are {', '.join(appt_times)}."
 
     async def _arun(self, appointment_date: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Use the tool asynchronously."""
@@ -112,6 +112,11 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool):
     description = "Used for scheduling appointments for prospects or checking appointment availability."
     args_schema: Type[AppointmentsAndAvailabilitySchema] = AppointmentsAndAvailabilitySchema
     handle_tool_error = True
+
+    # add new fields to be passed in when instantiating the class
+    client_id: int
+    group_id: int
+    api_key: str
 
     def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Try to schedule for provided time."""
@@ -130,14 +135,15 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool):
                         "The agent should provide it in YYYY-MM-DD format, then run again."
                     )
 
-                appt_date = d.strftime('%Y-%m-%d')
-                if appt_date not in AVAILABLE_APPOINTMENT_TIMES:
+                appt_times = available_appointment_times(d, self.group_id, self.api_key)
+
+                if not appt_times:
                     return "There are no available times on the requested date."
 
-                return (
-                    "Available appointment times on that date are "
-                    f"{', '.join(AVAILABLE_APPOINTMENT_TIMES[appt_date])}."
-                )
+                # limit to maximum that should be displayed
+                appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
+
+                return f"The next available appointment times on that date are {', '.join(appt_times)}."
 
             return self._try_to_book_for_time(d)
 
@@ -148,18 +154,12 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool):
         return "Not implemented"
 
     def _try_to_book_for_time(self, datetime_obj):
-        appt_date = datetime_obj.strftime('%Y-%m-%d')
-        if appt_date not in AVAILABLE_APPOINTMENT_TIMES:
-            return "Appointment could not be booked because appointment day is unavailable."
+        was_scheduled_successfully = schedule_appointment(datetime_obj, self.client_id, self.group_id)
 
-        appt_time = datetime_obj.strftime('%H:%M:%S')
-        if appt_time not in AVAILABLE_APPOINTMENT_TIMES[appt_date]:
-            return (
-                "Appointment could not be booked because appointment time is unavailable. "
-                f"Alternative appointment times on that date are {', '.join(AVAILABLE_APPOINTMENT_TIMES[appt_date])}."
-            )
+        if not was_scheduled_successfully:
+            return "Appointment could not be booked because appointment time is unavailable."
 
-        return f"Scheduled successfully for {appt_time} on {appt_date}!"
+        return f"Scheduled successfully for {datetime_obj.strftime('%H:%M:%S')} on {datetime_obj.strftime('%Y-%m-%d')}!"
 
 
 class CurrentTimeTool(BaseTool):
