@@ -10,7 +10,11 @@ setup(
     url="https://github.com/jchryssanthacopoulos/VLA-LLM",
     packages=find_packages(),
     install_requires=[
-        "langchain==0.0.240",
-        "openai==0.27.8"
+        "langchain==0.0.264",
+        "pydantic==1.10.12",
+        "python-dotenv==1.0.0",
+        "openai==0.27.8",
+        "fastapi==0.101.1",
+        "uvicorn==0.23.2"
     ]
 )
