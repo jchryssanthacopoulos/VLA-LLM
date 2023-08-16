@@ -81,3 +81,71 @@ def available_appointment_times(appt_date: datetime.datetime, group_id: int, api
         return []
 
     return response.json().get('available_times', [])
+
+
+def delete_client_preferences(client_id: int):
+    """Delete preferences on client's guest card.
+
+    Args:
+        client_id: ID of client to delete preferences for
+
+    """
+    url = f"https://nestiolistings.com/api/virtualagent/clients/{client_id}/delete-preferences/"
+
+    requests.delete(
+        url, headers={'Content-Type': 'application/json'}, auth=(config.CHUCK_API_KEY, '')
+    )
+
+
+def enable_vla(client_id: int, group_id: int):
+    """Enable VLA for client.
+
+    Args:
+        client_id: ID of client to enable the VLA for
+        group_id: Group ID associated with client
+
+    """
+    url = f"https://nestiolistings.com/api/virtualagent/clients/{client_id}/groups/{group_id}/enable-vla/"
+
+    requests.put(
+        url, json={}, headers={'Content-Type': 'application/json'}, auth=(config.CHUCK_API_KEY, '')
+    )
+
+
+def get_client_appointments(client_id: int, api_key: str) -> List:
+    """Get client appointments.
+
+    Args:
+        client_id: Client ID
+        api_key: API key corresponding to management company with client
+
+    Returns:
+        Client appointments (empty if it couldn't be retrieved or if there are no appointments)
+
+    """
+    url = f"https://nestiolistings.com/api/v2/clients/{client_id}/appointments"
+
+    response = requests.get(url, headers={'Content-Type': 'application/json'}, auth=(api_key, ''))
+
+    if response.status_code == 200:
+        return response.json().get('data', {}).get('appointments', [])
+
+    return []
+
+
+def cancel_appointment(appointment_id: int, api_key: str) -> bool:
+    """Cancel an appointment.
+
+    Args:
+        appointment_id: ID of appointment to cancel
+        api_key: API key corresponding to management company
+
+    Returns:
+        Whether or not rescheduling was successful
+
+    """
+    url = f"https://nestiolistings.com/api/v2/appointments/{appointment_id}"
+
+    response = requests.delete(url, auth=(api_key, ''))
+
+    return response.status_code == 200
