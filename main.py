@@ -1,12 +1,14 @@
 """Main entry point into the server."""
 
 import json
+import re
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.schema.messages import HumanMessage
 from langchain.schema.messages import AIMessage
+from langchain.schema.output_parser import OutputParserException
 from pydantic import BaseModel
 from redis_om import get_redis_connection
 from redis_om import HashModel
@@ -99,21 +101,30 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
 
     agent = ChatConversationalVLAAgent(temperature, tools, messages)
 
-    if not conversation_history:
-        # if there is no conversation history, add community data and instructions to the prompt
-        prompt_template = (
-            f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
-            "Here is the prospect message:\n\n{prospect_message}"
-        )
-        response = agent.agent_chain.run(input=prompt_template.format(prospect_message=inputs.message))
-    else:
-        response = agent.agent_chain.run(input=inputs.message)
+    try:
+        if not conversation_history:
+            # if there is no conversation history, add community data and instructions to the prompt
+            prompt_template = (
+                f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
+                "Here is the prospect message:\n\n{prospect_message}"
+            )
+            prospect_message = prompt_template.format(prospect_message=inputs.message)
+            response = agent.agent_chain.run(input=prospect_message)
+        else:
+            prospect_message = inputs.message
+            response = agent.agent_chain.run(input=prospect_message)
+    except OutputParserException as e:
+        match = re.match("Could not parse LLM output: (?P<message>.*)", str(e))
+        if match:
+            response = match.groupdict()['message']
+        else:
+            # fall back to default
+            response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
 
     # update and save conversation history
-    all_messages = agent.agent_chain.memory.chat_memory.messages
     conversation_history.append({
-        'human_message': all_messages[-2].content,
-        'ai_message': all_messages[-1].content
+        'human_message': prospect_message,
+        'ai_message': response
     })
     redis.set(redis_key, json.dumps(conversation_history))
 
