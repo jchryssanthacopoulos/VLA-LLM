@@ -1,10 +1,16 @@
 """Main entry point into the server."""
 
+import json
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from langchain.schema.messages import HumanMessage
+from langchain.schema.messages import AIMessage
 from pydantic import BaseModel
+from redis_om import get_redis_connection
+from redis_om import HashModel
+
 
 from VLA_LLM import prompts
 from VLA_LLM.agents import ChatConversationalVLAAgent
@@ -20,6 +26,9 @@ from VLA_LLM.tools import CurrentTimeTool
 
 app = FastAPI()
 
+redis = get_redis_connection()
+
+
 origins = ["*"]
 app.add_middleware(
     CORSMiddleware,
@@ -30,6 +39,17 @@ app.add_middleware(
 )
 
 
+@app.get("/")
+async def root():
+    return {"message": "Hello World"}
+
+
+class ClientConversationHistory(HashModel):
+    client_id: int
+    community_id: int
+    conversation_history: str
+
+
 class QueryVLAInputs(BaseModel):
     client_id: int
     group_id: int
@@ -37,11 +57,6 @@ class QueryVLAInputs(BaseModel):
     api_key: str
     message: str
     message_medium: Optional[str]
-
-
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
 
 
 @app.post("/query-virtual-agent/")
@@ -55,12 +70,14 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
         VLA response
 
     """
+    redis_key = f"{inputs.community_id}:{inputs.client_id}"
+    redis_state = redis.get(redis_key)
+
+    conversation_history = json.loads(redis_state) if redis_state else []
+
     # get community info prompt
     community_info = get_community_info(inputs.community_id)
     community_info_prompt = community_dict_to_prompt(community_info)
-
-    # most deterministic results
-    temperature = 0
 
     tools = [
         CurrentTimeTool(),
@@ -69,14 +86,36 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
         )
     ]
 
-    agent = ChatConversationalVLAAgent(temperature, tools)
+    # most deterministic results
+    temperature = 0
 
-    prompt_template = (
-        f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
-        "Here is the prospect message:\n\n{prospect_message}"
-    )
+    # create memory
+    messages = []
+    for interaction in conversation_history:
+        messages.extend([
+            HumanMessage(content=interaction['human_message']),
+            AIMessage(content=interaction['ai_message'])
+        ])
 
-    response = agent.agent_chain.run(input=prompt_template.format(prospect_message=inputs.message))
+    agent = ChatConversationalVLAAgent(temperature, tools, messages)
+
+    if not conversation_history:
+        # if there is no conversation history, add community data and instructions to the prompt
+        prompt_template = (
+            f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
+            "Here is the prospect message:\n\n{prospect_message}"
+        )
+        response = agent.agent_chain.run(input=prompt_template.format(prospect_message=inputs.message))
+    else:
+        response = agent.agent_chain.run(input=inputs.message)
+
+    # update and save conversation history
+    all_messages = agent.agent_chain.memory.chat_memory.messages
+    conversation_history.append({
+        'human_message': all_messages[-2].content,
+        'ai_message': all_messages[-1].content
+    })
+    redis.set(redis_key, json.dumps(conversation_history))
 
     return {
         'response': {
@@ -87,6 +126,7 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
 
 class ResetVLAInputs(BaseModel):
     client_id: int
+    community_id: int
     group_id: int
     api_key: str
 
@@ -110,6 +150,10 @@ async def reset_virtual_agent_client(inputs: ResetVLAInputs):
     appointments = get_client_appointments(inputs.client_id, inputs.api_key)
     for appt in appointments:
         cancel_appointment(appt['id'], inputs.api_key)
+
+    # clear redis cache
+    redis_key = f"{inputs.community_id}:{inputs.client_id}"
+    redis.delete(redis_key)
 
     return {
         'response': {

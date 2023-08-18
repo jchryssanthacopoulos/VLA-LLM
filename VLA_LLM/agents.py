@@ -10,6 +10,7 @@ from langchain.agents import ZeroShotAgent
 from langchain.chat_models import ChatOpenAI
 from langchain.llms import OpenAI
 from langchain.memory import ConversationBufferMemory
+from langchain.memory.chat_message_histories.in_memory import ChatMessageHistory
 from langchain.tools import BaseTool
 
 from VLA_LLM.config import OPENAI_API_KEY
@@ -58,12 +59,13 @@ class ZeroShotVLAAgent:
 
 class ChatConversationalVLAAgent:
 
-    def __init__(self, temperature: float, tools: List[BaseTool]):
+    def __init__(self, temperature: float, tools: List[BaseTool], messages: List):
         """Create a chat conversational VLA agent.
 
         Args:
             temperature: Temperature to use in underlying LLM
             tools: List of tools the agent has access to
+            messages: List of past messages to seed the memory
 
         """
         # NOTE: I don't think this works
@@ -75,9 +77,12 @@ class ChatConversationalVLAAgent:
         # chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
 
         llm = ChatOpenAI(temperature=temperature, openai_api_key=OPENAI_API_KEY)
-        # llm = OpenAI(model_name="gpt-3.5-turbo",temperature=temperature, openai_api_key=OPENAI_API_KEY)
 
-        memory = ConversationBufferMemory(memory_key="chat_history", return_messages=True)
+        memory = ConversationBufferMemory(
+            memory_key="chat_history",
+            chat_memory=ChatMessageHistory(messages=messages),
+            return_messages=True
+        )
 
         self.agent_chain = initialize_agent(
             tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory

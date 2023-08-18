@@ -1,0 +1,17 @@
+version: '3'
+services:
+    app:
+        build: .
+        volumes:
+            - '.:/VLA_LLM'
+        command: uvicorn main:app --host 0.0.0.0 --reload
+        ports:
+            - "8000:8000"
+        depends_on:
+            - redis
+        environment:
+            - OPENAI_API_KEY=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
+            - CHUCK_API_KEY=d3ViQUxVQmFEVUJkVThyaWNreVRJQ0tZdGFmZnlCRVRDSA==
+            - REDIS_OM_URL=redis://redis:6379/0
+    redis:
+        image: "redis:alpine"

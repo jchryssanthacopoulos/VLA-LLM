@@ -15,6 +15,7 @@ setup(
         "python-dotenv==1.0.0",
         "openai==0.27.8",
         "fastapi==0.101.1",
-        "uvicorn==0.23.2"
+        "uvicorn==0.23.2",
+        "redis-om==0.2.1"
     ]
 )
