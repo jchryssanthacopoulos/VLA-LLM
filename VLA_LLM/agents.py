@@ -27,17 +27,12 @@ class ZeroShotVLAAgent:
             tools: List of tools the agent has access to
 
         """
-        # prefix = prefix.format(community_info=community_info)
-
         suffix = (
             "Chat history:\n\n"
             "{chat_history}\n\n"
             "Prospect question:\n\n"
             "{input}\n\n"
             "{agent_scratchpad}"
-            # "Question: {input}\n"
-            # "Thought: {agent_scratchpad}\n"
-            # "Action:"
         )
         prompt = ZeroShotAgent.create_prompt(
             tools,
