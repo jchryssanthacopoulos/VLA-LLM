@@ -63,14 +63,6 @@ class ChatConversationalVLAAgent:
             messages: List of past messages to seed the memory
 
         """
-        # NOTE: I don't think this works
-        # from langchain.prompts.chat import ChatPromptTemplate, SystemMessagePromptTemplate, HumanMessagePromptTemplate
-        # template = "You are a helpful assistant that translates {input_language} to {output_language}."
-        # system_message_prompt = SystemMessagePromptTemplate.from_template(template)
-        # human_template = "{text}"
-        # human_message_prompt = HumanMessagePromptTemplate.from_template(human_template)
-        # chat_prompt = ChatPromptTemplate.from_messages([system_message_prompt, human_message_prompt])
-
         llm = ChatOpenAI(temperature=temperature, openai_api_key=OPENAI_API_KEY)
 
         memory = ConversationBufferMemory(
