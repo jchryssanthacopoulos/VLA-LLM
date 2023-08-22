@@ -57,8 +57,7 @@ class BaseSchedulerTool:
         "Unfortunately, you can't book a tour with such short notice. Can you provide another time?"
     )
     AGENT_RESPONSE_BAD_DATE = (
-        "The date was not converted into the correct format. Call the current time tool then try to convert "
-        "the appointment time into YYYY-MM-DD format with respect to the current day and try again."
+        "I'm sorry, I had some difficulty understanding the date you provide. Can you please repeat it?"
     )
 
     def try_to_book_for_time(
@@ -262,82 +261,13 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
 
     def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Try to schedule for provided time."""
-        # check if time is in the correct format
-        try:
-            d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d %H:%M:%S')
-        except:
-            try:
-                d = datetime.datetime.strptime(appointment_time, '%A %Y-%m-%d %H:%M:%S')
-            except:
-                try:
-                    d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d')
-                except:
-                    # try to convert provided time into datetime object manually
-                    date = self._convert_date(appointment_time)
-
-                    if date:
-                        if date.is_date():
-                            d = date.datetime_min
-                            return self.get_available_appointment_times(d, self.group_id, self.api_key)
-                        elif date.is_exact_datetime():
-                            d = date.datetime_min
-                            return self.try_to_book_for_time(d, self.client_id, self.group_id)
-
-                    raise ToolException(
-                        "Appointment date is not in the correct format. "
-                        "The agent should provide it in YYYY-MM-DD format, then run again."
-                    )
-
-                return self.get_available_appointment_times(d, self.group_id, self.api_key)
-
-            return self.try_to_book_for_time(d, self.client_id, self.group_id)
-
-        return self.try_to_book_for_time(d, self.client_id, self.group_id)
-
-    async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Use the tool asynchronously."""
-        return "Not implemented"
-
-    def _convert_date(self, appointment_time: str) -> Optional[DateTimeInformation]:
-        appointment_time_converter = AppointmentDateConverter(am_to_pm_threshold=8)
-
-        message_timestamp = datetime.datetime.now(tz=pytz.UTC)
-        dates = appointment_time_converter.transform_dates_to_date_time_info(
-            [appointment_time], message_timestamp=message_timestamp, community_timezone=self.community_timezone
-        )
-
-        if not dates:
-            return
-
-        # return first date
-        return dates[0]
-
-
-class AppointmentReschedulerTool(BaseTool, BaseSchedulerTool):
-    """Allows the agent to reschedule an appointment."""
-
-    name = "appointment_rescheduler"
-    description = "Used for rescheduling existing appointments for prospects"
-    args_schema: Type[AppointmentsReschedulerSchema] = AppointmentsReschedulerSchema
-    handle_tool_error = True
-
-    # add new fields to be passed in when instantiating the class
-    client_id: int
-    group_id: int
-    api_key: str
-    community_timezone: str
-
-    def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        """Try to reschedule for provided time."""
         # first check if client has an appointment
-        client_appointments = get_client_appointments(self.client_id, self.api_key)
-        if not client_appointments:
-            return (
-                "I'm sorry, but it appears the client does not already have an appointment to reschedule."
-            )
+        appointment_id = None
 
-        # for simplicity, just look at first tour
-        appointment_id = client_appointments[0]['id']
+        client_appointments = get_client_appointments(self.client_id, self.api_key)
+        if client_appointments:
+            # for simplicity, just look at first tour
+            appointment_id = client_appointments[0]['id']
 
         # check if time is in the correct format
         try:

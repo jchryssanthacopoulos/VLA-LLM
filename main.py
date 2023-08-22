@@ -24,7 +24,6 @@ from VLA_LLM.api import get_community_info
 from VLA_LLM.community_info import community_dict_to_prompt
 from VLA_LLM.tools import AppointmentCancelerTool
 from VLA_LLM.tools import AppointmentSchedulerAndAvailabilityTool
-from VLA_LLM.tools import AppointmentReschedulerTool
 from VLA_LLM.tools import CurrentTimeTool
 
 
@@ -94,12 +93,6 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
             api_key=inputs.api_key,
             community_timezone=community_info.get('timezone')
         ),
-        AppointmentReschedulerTool(
-            client_id=inputs.client_id,
-            group_id=inputs.group_id,
-            api_key=inputs.api_key,
-            community_timezone=community_info.get('timezone')
-        ),
         AppointmentCancelerTool(
             client_id=inputs.client_id,
             api_key=inputs.api_key
@@ -123,7 +116,7 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
         if not conversation_history:
             # if there is no conversation history, add community data and instructions to the prompt
             prompt_template = (
-                f"{prompts.prompt_two_tool_with_rescheduler_cancel_explicit.format(community_info=community_info_prompt)}\n\n"
+                f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
                 "Here is the prospect message:\n\n{prospect_message}"
             )
             prospect_message = prompt_template.format(prospect_message=inputs.message)
