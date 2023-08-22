@@ -1,6 +1,8 @@
 """Utilities for converting structured community information into text that can be inserted into a prompt."""
 
+import datetime
 from typing import Dict
+from typing import List
 
 
 def community_dict_to_prompt(community_dict: Dict) -> str:
@@ -26,6 +28,10 @@ def community_dict_to_prompt(community_dict: Dict) -> str:
         f"\nLocation: {community_building_number} {community_street}, {community_city}, {community_state} "
         f"{community_postal_code}"
     )
+
+    office_hours = _get_office_hours(community_dict)
+    if office_hours:
+        prompt += f"\nOffice hours: {office_hours}"
 
     # parking
     parking_options = community_dict["parking_options"]
@@ -128,3 +134,181 @@ def community_dict_to_prompt(community_dict: Dict) -> str:
     prompt += f"\nA video of the community can be found here: {community_dict['video_tour_url']}"
 
     return prompt
+
+
+def _get_office_hours(community_dict: Dict) -> str:
+    """Get office hours message.
+
+    Walks through Monday to Sunday, grouping any consecutive days with the same hours.
+    Any days which are closed are included in the last sentence.
+
+    The copy would then look something like this:
+
+        The office is open Monday through Friday from 8 AM to 8 PM and Saturday from 9 AM to 8 PM.
+        It is closed on Sunday.
+
+    Args:
+        community_dict: Community information
+        
+    Returns:
+        string containing office hours message copy, or an empty string when copy cannot be produced correctly
+
+    """
+    consec_same_hours = []  # Current grouping of days with the same office hours
+    closed_days = []        # Days which are closed
+    office_hours_strs = []  # List of strings which will be built as we walk through groupings
+    prev_open = None        # Opening time of previously considered day
+    prev_close = None       # Closing time of previously considered day
+
+    # Office hours schedule
+    hours_by_day = community_dict.get('hours_of_operation', {})
+
+    for day in hours_by_day:
+        open_at = hours_by_day[day]['open_at']
+        close_at = hours_by_day[day]['close_at']
+        is_closed = hours_by_day[day]['is_closed']
+
+        # Check if the running chain of consecutive days is broken by the current day under consideration
+        if is_closed or open_at != prev_open or close_at != prev_close:
+            # Form string for all the days in the current grouping
+            days_str = _form_string_from_consec_day_grouping(consec_same_hours, prev_open, prev_close)
+            if days_str:
+                # Add to our list of strings to be added to copy
+                office_hours_strs.append(days_str)
+
+            if not is_closed:
+                # If the current day is not closed, start our next grouping with this day
+                consec_same_hours = [day.capitalize()]
+            else:
+                # Otherwise start an empty next grouping
+                consec_same_hours = []
+        else:
+            # Current day continues the grouping of consecutive days w/ same hours; append
+            consec_same_hours.append(day.capitalize())
+
+        if is_closed:
+            # Independently add closed days to their own list
+            closed_days.append(day.capitalize())
+
+        # Update prevs before continuing loop
+        prev_open = open_at
+        prev_close = close_at
+
+    # We may have left some days hanging; create final string if necessary
+    if consec_same_hours and not is_closed:
+        days_str = _form_string_from_consec_day_grouping(consec_same_hours, prev_open, prev_close)
+        if days_str:
+            office_hours_strs.append(days_str)
+
+    if not office_hours_strs:
+        # No valid strings made; suppress office hours response
+        return ''
+
+    # Concatenate list into single string for open days
+    message = combine_list_into_displayable_text(office_hours_strs)
+
+    closed_days_msg = ''
+    if closed_days:
+        # Concatenate list into single string for closed days
+        closed_days_str = combine_list_into_displayable_text(closed_days)
+        closed_days_msg = f' It is closed on {closed_days_str}.'
+
+    message = 'The office is open ' + message + '.' + closed_days_msg
+
+    return message
+
+
+def _form_string_from_consec_day_grouping(days: List[str], open_at: str, close_at: str) -> str:
+    """Office hours helper function for forming strings from groupings of consecutive days.
+
+    Args:
+        days: list of consecutive days with same hours
+        open_at: opening time for consecutive days
+        close_at: closing time for consecutive days
+
+    Returns:
+        string containing office hours information for a consecutive grouping of days, or
+            None if any of the parameters evaluate to False
+
+    """
+    if days and open_at and close_at:
+        # Number of days in grouping determines how days are represented in message
+        if len(days) == 1:
+            days_str = days[0]
+        elif len(days) == 2:
+            days_str = days[0] + ' and ' + days[1]
+        elif len(days) == 7:
+            days_str = 'everyday'
+        else:
+            # Grouping length between 2 and 7 days
+            days_str = days[0] + ' through ' + days[-1]
+
+        # Format opening time to be more human readavble
+        readable_open_hour = human_readable_hour(
+            # Parse time from string
+            datetime.datetime.strptime(open_at, '%H:%M:%S').time(),
+            add_am_pm=True,
+            add_timezone=True
+        )
+        # Format closing time to be more human readavble
+        readable_close_hour = human_readable_hour(
+            # Parse time from string
+            datetime.datetime.strptime(close_at, '%H:%M:%S').time(),
+            add_am_pm=True,
+            add_timezone=True
+        )
+        return f'{days_str} from {readable_open_hour} to {readable_close_hour}'
+
+
+def combine_list_into_displayable_text(lst: List, separator: str = 'and') -> str:
+    """Combine list into displayable text.
+
+    Args:
+        lst: List like ['washer', 'modern cabinets']
+        separator: Conjunction used to separate multiple terms (default = 'and')
+
+    Returns:
+        String like 'washer and modern cabinets'
+
+    """
+    if len(lst) == 0:
+        return ''
+
+    if len(lst) == 1:
+        return lst[0]
+
+    if len(lst) == 2:
+        return f'{lst[0]} {separator} {lst[1]}'
+
+    return f'{", ".join([str(l) for l in lst[:-1]])}, {separator} {lst[-1]}'
+
+
+def human_readable_hour(datetime_obj: datetime, add_am_pm: bool = False, add_timezone: bool = False) -> str:
+    """Get hour of datetime in human-readable format.
+
+    Args:
+        datetime_obj: Datetime to get hour for
+        add_am_pm: Whether to add AM/PM after the time
+        add_timezone: Add timezone abbreviation at end, if present in datetime object
+
+    Returns:
+        String of human-readable hour in HH:MM format
+
+    """
+    format_str = "%-I"
+
+    if datetime_obj.minute != 0:
+        # add the minute part
+        format_str += ":%M"
+
+    if add_am_pm:
+        format_str += " %p"
+
+    fmt_time = datetime_obj.strftime(format_str)
+
+    if add_timezone:
+        timezone = datetime_obj.tzname()
+        if timezone:
+            return f"{fmt_time} {timezone}"
+
+    return fmt_time
