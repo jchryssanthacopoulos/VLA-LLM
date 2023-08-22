@@ -57,6 +57,52 @@ def schedule_appointment(appt_time: datetime.datetime, client_id: int, group_id:
     return response.json()
 
 
+def reschedule_appointment(appt_time: datetime.datetime, appointment_id: int, group_id: int, api_key: str) -> bool:
+    """Reschedule an appointment.
+
+    Args:
+        appt_time: Appointment time datetime object
+        appointment_id: ID of appointment to reschedule
+        group_id: Group to create an appointment with
+        api_key: API key corresponding to management company
+
+    Returns:
+        Whether or not rescheduling was successful
+
+    """
+    url = f"https://nestiolistings.com/api/v2/appointments/{appointment_id}/group/{group_id}/book"
+
+    data = {
+        'appointment': {
+            'start': appt_time.isoformat()
+        }
+    }
+
+    response = requests.put(
+        url, json=data, headers={'Content-Type': 'application/json'}, auth=(api_key, '')
+    )
+
+    return response.json()
+
+
+def cancel_appointment(appointment_id: int, api_key: str) -> bool:
+    """Cancel an appointment.
+
+    Args:
+        appointment_id: ID of appointment to cancel
+        api_key: API key corresponding to management company
+
+    Returns:
+        Whether or not rescheduling was successful
+
+    """
+    url = f"https://nestiolistings.com/api/v2/appointments/{appointment_id}"
+
+    response = requests.delete(url, auth=(api_key, ''))
+
+    return response.status_code == 200
+
+
 def available_appointment_times(appt_date: datetime.datetime, group_id: int, api_key: str) -> List[str]:
     """Get available appointment times on provided date.
 
@@ -131,21 +177,3 @@ def get_client_appointments(client_id: int, api_key: str) -> List:
         return response.json().get('data', {}).get('appointments', [])
 
     return []
-
-
-def cancel_appointment(appointment_id: int, api_key: str) -> bool:
-    """Cancel an appointment.
-
-    Args:
-        appointment_id: ID of appointment to cancel
-        api_key: API key corresponding to management company
-
-    Returns:
-        Whether or not rescheduling was successful
-
-    """
-    url = f"https://nestiolistings.com/api/v2/appointments/{appointment_id}"
-
-    response = requests.delete(url, auth=(api_key, ''))
-
-    return response.status_code == 200
