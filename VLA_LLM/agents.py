@@ -54,16 +54,26 @@ class ZeroShotVLAAgent:
 
 class ChatConversationalVLAAgent:
 
-    def __init__(self, temperature: float, tools: List[BaseTool], messages: List):
+    def __init__(self, temperature: float, tools: List[BaseTool], messages: List, prompt_template: str):
         """Create a chat conversational VLA agent.
 
         Args:
             temperature: Temperature to use in underlying LLM
             tools: List of tools the agent has access to
             messages: List of past messages to seed the memory
+            prompt_template: Prompt to use
 
         """
         llm = ChatOpenAI(temperature=temperature, openai_api_key=OPENAI_API_KEY)
+
+        # from langchain.chains.conversation.memory import ConversationSummaryBufferMemory
+        # memory = ConversationSummaryBufferMemory(
+        #     llm=llm,
+        #     max_token_limit=650,
+        #     memory_key="chat_history",
+        #     chat_memory=ChatMessageHistory(messages=messages),
+        #     return_messages=True
+        # )
 
         memory = ConversationBufferMemory(
             memory_key="chat_history",
@@ -72,5 +82,14 @@ class ChatConversationalVLAAgent:
         )
 
         self.agent_chain = initialize_agent(
-            tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory
+            agent='chat-conversational-react-description',
+            tools=[], llm=llm, verbose=True, memory=memory, max_iterations=3
         )
+
+        new_prompt = self.agent_chain.agent.create_prompt(
+            system_message=prompt_template,
+            tools=tools
+        )
+
+        self.agent_chain.agent.llm_chain.prompt = new_prompt
+        self.agent_chain.tools = tools

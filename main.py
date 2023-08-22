@@ -110,20 +110,11 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
             AIMessage(content=interaction['ai_message'])
         ])
 
-    agent = ChatConversationalVLAAgent(temperature, tools, messages)
+    prompt_template = prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)
+    agent = ChatConversationalVLAAgent(temperature, tools, messages, prompt_template)
 
     try:
-        if not conversation_history:
-            # if there is no conversation history, add community data and instructions to the prompt
-            prompt_template = (
-                f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
-                "Here is the prospect message:\n\n{prospect_message}"
-            )
-            prospect_message = prompt_template.format(prospect_message=inputs.message)
-            response = agent.agent_chain.run(input=prospect_message)
-        else:
-            prospect_message = inputs.message
-            response = agent.agent_chain.run(input=prospect_message)
+        response = agent.agent_chain.run(input=inputs.message)
     except OutputParserException as e:
         match = re.match("Could not parse LLM output: (?P<message>.*)", str(e))
         if match:
@@ -134,7 +125,7 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
 
     # update and save conversation history
     conversation_history.append({
-        'human_message': prospect_message,
+        'human_message': inputs.message,
         'ai_message': response
     })
     redis.set(redis_key, json.dumps(conversation_history))

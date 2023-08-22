@@ -32,7 +32,8 @@ class AppointmentDateSchema(BaseModel):
 
 
 class AppointmentsAndAvailabilitySchema(BaseModel):
-    appointment_time: str = Field(description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format")
+    appointment_day: str = Field(description="The prospect's desired appointment day")
+    appointment_time: Optional[str] = Field(description="The prospect's desired appointment time")
 
 
 class AppointmentsReschedulerSchema(BaseModel):
@@ -249,7 +250,11 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
     """Allows the agent to book an appointment or check appointment availability."""
 
     name = "appointment_scheduler_availability"
-    description = "Used for scheduling appointments for prospects or checking appointment availability."
+    description = (
+        "Used for scheduling appointments for prospects or checking appointment availability. "
+        "When the prospect asks to schedule an appointment for a given date, pass the appointment day in as a "
+        "parameter. When they also mention their preferred appointment time, pass that into the tool as well"
+    )
     args_schema: Type[AppointmentsAndAvailabilitySchema] = AppointmentsAndAvailabilitySchema
     handle_tool_error = True
 
@@ -259,7 +264,7 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
     api_key: str
     community_timezone: str
 
-    def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
+    def _run(self, appointment_day: str, appointment_time: Optional[str] = None) -> str:
         """Try to schedule for provided time."""
         # first check if client has an appointment
         appointment_id = None
@@ -269,45 +274,28 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
             # for simplicity, just look at first tour
             appointment_id = client_appointments[0]['id']
 
-        # check if time is in the correct format
-        try:
-            d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d %H:%M:%S')
-        except:
-            try:
-                d = datetime.datetime.strptime(appointment_time, '%A %Y-%m-%d %H:%M:%S')
-            except:
-                try:
-                    d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d')
-                except:
-                    # try to convert provided time into datetime object manually
-                    date = self._convert_date(appointment_time)
+        appt_datetime_str = appointment_day
+        if appointment_time:
+            appt_datetime_str += f" {appointment_time}"
 
-                    if date:
-                        if date.is_date():
-                            d = date.datetime_min
-                            return self.get_available_appointment_times(d, self.group_id, self.api_key)
-                        elif date.is_exact_datetime():
-                            d = date.datetime_min
-                            return self.try_to_book_for_time(
-                                d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
-                            )
+        date = self._convert_date(appt_datetime_str)
 
-                    raise ToolException(
-                        "Appointment date is not in the correct format. "
-                        "The agent should provide it in YYYY-MM-DD format, then run again."
-                    )
-
+        if date:
+            if date.is_date():
+                d = date.datetime_min
                 return self.get_available_appointment_times(d, self.group_id, self.api_key)
+            elif date.is_exact_datetime():
+                d = date.datetime_min
+                return self.try_to_book_for_time(
+                    d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
+                )
 
-            return self.try_to_book_for_time(
-                d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
-            )
-
-        return self.try_to_book_for_time(
-            d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
+        raise ToolException(
+            "Appointment date is not in the correct format. "
+            "The agent should provide it in YYYY-MM-DD format, then run again."
         )
 
-    async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
+    async def _arun(self, query: str) -> str:
         """Use the tool asynchronously."""
         return "Not implemented"
 

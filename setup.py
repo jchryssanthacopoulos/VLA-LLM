@@ -18,6 +18,7 @@ setup(
         "uvicorn==0.23.2",
         "redis-om==0.2.1",
         "pytz==2022.1",
-        "dateparser==1.1.1"
+        "dateparser==1.1.1",
+        "tiktoken==0.4.0"
     ]
 )
