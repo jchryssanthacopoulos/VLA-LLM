@@ -84,7 +84,10 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
     tools = [
         CurrentTimeTool(),
         AppointmentSchedulerAndAvailabilityTool(
-            client_id=inputs.client_id, group_id=inputs.group_id, api_key=inputs.api_key
+            client_id=inputs.client_id,
+            group_id=inputs.group_id,
+            api_key=inputs.api_key,
+            community_timezone=community_info.get('timezone')
         )
     ]
 

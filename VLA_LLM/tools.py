@@ -11,8 +11,11 @@ from langchain.tools import BaseTool
 from langchain.tools.base import ToolException
 from pydantic import Field
 from pydantic import BaseModel
+import pytz
 
 from VLA_LLM import config
+from VLA_LLM.dates import AppointmentDateConverter
+from VLA_LLM.dates import DateTimeInformation
 from VLA_LLM.api import available_appointment_times
 from VLA_LLM.api import schedule_appointment
 
@@ -204,6 +207,7 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
     client_id: int
     group_id: int
     api_key: str
+    community_timezone: str
 
     def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
         """Try to schedule for provided time."""
@@ -217,6 +221,16 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
                 try:
                     d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d')
                 except:
+                    # try to convert provided time into datetime object manually
+                    date = self._convert_date(appointment_time)
+
+                    if date.is_date():
+                        d = date.datetime_min
+                        return self.get_available_appointment_times(d, self.group_id, self.api_key)
+                    elif date.is_exact_datetime():
+                        d = date.datetime_min
+                        return self.try_to_book_for_time(d, self.client_id, self.group_id)
+
                     raise ToolException(
                         "Appointment date is not in the correct format. "
                         "The agent should provide it in YYYY-MM-DD format, then run again."
@@ -231,6 +245,20 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
     async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
         """Use the tool asynchronously."""
         return "Not implemented"
+
+    def _convert_date(self, appointment_time: str) -> Optional[DateTimeInformation]:
+        appointment_time_converter = AppointmentDateConverter(am_to_pm_threshold=8)
+
+        message_timestamp = datetime.datetime.now(tz=pytz.UTC)
+        dates = appointment_time_converter.transform_dates_to_date_time_info(
+            [appointment_time], message_timestamp=message_timestamp, community_timezone=self.community_timezone
+        )
+
+        if not dates:
+            return
+
+        # return first date
+        return dates[0]
 
 
 class CurrentTimeTool(BaseTool):
