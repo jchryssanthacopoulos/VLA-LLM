@@ -72,5 +72,10 @@ class ChatConversationalVLAAgent:
         )
 
         self.agent_chain = initialize_agent(
-            tools, llm, agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION, verbose=True, memory=memory
+            tools,
+            llm,
+            agent=AgentType.CHAT_CONVERSATIONAL_REACT_DESCRIPTION,
+            verbose=True,
+            memory=memory,
+            max_iterations=3
         )

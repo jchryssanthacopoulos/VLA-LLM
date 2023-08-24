@@ -132,6 +132,9 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
             # fall back to default
             response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
 
+    if response == 'Agent stopped due to iteration limit or time limit.':
+        response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
+
     # update and save conversation history
     conversation_history.append({
         'human_message': prospect_message,
