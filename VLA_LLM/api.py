@@ -216,3 +216,37 @@ def update_client(
     )
 
     return response.json()
+
+
+def get_available_units(
+        community_id: int, move_in_date: Optional[datetime.datetime] = None, layout: Optional[List] = None,
+        price_ceiling: Optional[str] = None
+) -> List[Dict]:
+    """Get available units matching preferences.
+
+    Args:
+        community_id: ID of community
+        move_in_date: Move-in date to set or update to (if None, do not set)
+        layout: List of preferred layout types (if None, do not set)
+        price_ceiling: Budget (if None, do not set)
+
+    Returns:
+        List of dictionaries representing available apartments matching preferences
+
+    """
+    url = f'https://nestiolistings.com/api/virtualagent/search/{community_id}/listings/'
+
+    params = {}
+    if move_in_date:
+        params['date_available_before'] = move_in_date.strftime('%Y-%m-%d')
+    if price_ceiling:
+        params['max_price'] = price_ceiling
+    if layout:
+        params['layout'] = layout
+
+    response = requests.get(url, params=params, auth=(config.CHUCK_API_KEY, None))
+
+    if not response.ok:
+        return []
+
+    return response.json().get('listings', [])
