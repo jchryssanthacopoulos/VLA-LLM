@@ -1,31 +1,22 @@
 """Main entry point into the server."""
 
 import json
-import re
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from langchain.schema.messages import HumanMessage
 from langchain.schema.messages import AIMessage
-from langchain.schema.output_parser import OutputParserException
 from pydantic import BaseModel
 from redis_om import get_redis_connection
 from redis_om import HashModel
 
 
-from VLA_LLM import prompts
 from VLA_LLM.agents import ChatConversationalVLAAgent
 from VLA_LLM.api import cancel_appointment
 from VLA_LLM.api import delete_client_preferences
 from VLA_LLM.api import enable_vla
 from VLA_LLM.api import get_client_appointments
-from VLA_LLM.api import get_community_info
-from VLA_LLM.community_info import community_dict_to_prompt
-from VLA_LLM.tools.appointments import AppointmentCancelerTool
-from VLA_LLM.tools.appointments import AppointmentSchedulerAndAvailabilityTool
-from VLA_LLM.tools.appointments import CurrentTimeTool
-from VLA_LLM.tools.preferences import UpdatePreferencesTool
 
 
 app = FastAPI()
@@ -82,25 +73,6 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
 
     conversation_history = json.loads(redis_state) if redis_state else []
 
-    # get community info prompt
-    community_info = get_community_info(inputs.community_id)
-    community_info_prompt = community_dict_to_prompt(community_info)
-
-    tools = [
-        CurrentTimeTool(),
-        AppointmentSchedulerAndAvailabilityTool(
-            client_id=inputs.client_id,
-            group_id=inputs.group_id,
-            api_key=inputs.api_key,
-            community_timezone=community_info.get('timezone')
-        ),
-        AppointmentCancelerTool(
-            client_id=inputs.client_id,
-            api_key=inputs.api_key
-        ),
-        UpdatePreferencesTool(client_id=inputs.client_id)
-    ]
-
     # most deterministic results
     temperature = 0
 
@@ -112,34 +84,19 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
             AIMessage(content=interaction['ai_message'])
         ])
 
-    agent = ChatConversationalVLAAgent(temperature, tools, messages)
-
-    try:
-        if not conversation_history:
-            # if there is no conversation history, add community data and instructions to the prompt
-            prompt_template = (
-                f"{prompts.prompt_tools_with_preferences.format(community_info=community_info_prompt)}\n\n"
-                "Here is the prospect message:\n\n{prospect_message}"
-            )
-            prospect_message = prompt_template.format(prospect_message=inputs.message)
-            response = agent.agent_chain.run(input=prospect_message)
-        else:
-            prospect_message = inputs.message
-            response = agent.agent_chain.run(input=prospect_message)
-    except OutputParserException as e:
-        match = re.match("Could not parse LLM output: (?P<message>.*)", str(e))
-        if match:
-            response = match.groupdict()['message']
-        else:
-            # fall back to default
-            response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
-
-    if response == 'Agent stopped due to iteration limit or time limit.':
-        response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
+    agent = ChatConversationalVLAAgent(
+        inputs.client_id,
+        inputs.group_id,
+        inputs.community_id,
+        inputs.api_key,
+        messages,
+        temperature
+    )
+    response = agent.respond(inputs.message)
 
     # update and save conversation history
     conversation_history.append({
-        'human_message': prospect_message,
+        'human_message': inputs.message,
         'ai_message': response
     })
     redis.set(redis_key, json.dumps(conversation_history))
