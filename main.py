@@ -22,9 +22,10 @@ from VLA_LLM.api import enable_vla
 from VLA_LLM.api import get_client_appointments
 from VLA_LLM.api import get_community_info
 from VLA_LLM.community_info import community_dict_to_prompt
-from VLA_LLM.tools import AppointmentCancelerTool
-from VLA_LLM.tools import AppointmentSchedulerAndAvailabilityTool
-from VLA_LLM.tools import CurrentTimeTool
+from VLA_LLM.tools.appointments import AppointmentCancelerTool
+from VLA_LLM.tools.appointments import AppointmentSchedulerAndAvailabilityTool
+from VLA_LLM.tools.appointments import CurrentTimeTool
+from VLA_LLM.tools.preferences import UpdatePreferencesTool
 
 
 app = FastAPI()
@@ -96,7 +97,8 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
         AppointmentCancelerTool(
             client_id=inputs.client_id,
             api_key=inputs.api_key
-        )
+        ),
+        UpdatePreferencesTool(client_id=inputs.client_id)
     ]
 
     # most deterministic results
@@ -116,7 +118,7 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
         if not conversation_history:
             # if there is no conversation history, add community data and instructions to the prompt
             prompt_template = (
-                f"{prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)}\n\n"
+                f"{prompts.prompt_tools_with_preferences.format(community_info=community_info_prompt)}\n\n"
                 "Here is the prospect message:\n\n{prospect_message}"
             )
             prospect_message = prompt_template.format(prospect_message=inputs.message)

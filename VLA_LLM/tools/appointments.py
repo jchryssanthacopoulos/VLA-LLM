@@ -1,4 +1,4 @@
-"""Set of tools the agent has access to."""
+"""Tools related to scheduling a tour and finding availability."""
 
 import datetime
 from typing import Dict

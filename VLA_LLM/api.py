@@ -4,6 +4,7 @@ import datetime
 import requests
 from typing import Dict
 from typing import List
+from typing import Optional
 
 from VLA_LLM import config
 
@@ -57,7 +58,7 @@ def schedule_appointment(appt_time: datetime.datetime, client_id: int, group_id:
     return response.json()
 
 
-def reschedule_appointment(appt_time: datetime.datetime, appointment_id: int, group_id: int, api_key: str) -> bool:
+def reschedule_appointment(appt_time: datetime.datetime, appointment_id: int, group_id: int, api_key: str) -> Dict:
     """Reschedule an appointment.
 
     Args:
@@ -67,7 +68,7 @@ def reschedule_appointment(appt_time: datetime.datetime, appointment_id: int, gr
         api_key: API key corresponding to management company
 
     Returns:
-        Whether or not rescheduling was successful
+        Response from API
 
     """
     url = f"https://nestiolistings.com/api/v2/appointments/{appointment_id}/group/{group_id}/book"
@@ -177,3 +178,41 @@ def get_client_appointments(client_id: int, api_key: str) -> List:
         return response.json().get('data', {}).get('appointments', [])
 
     return []
+
+
+def update_client(
+        client_id: int, move_in_date: Optional[datetime.datetime] = None, layout: Optional[List] = None,
+        price_ceiling: Optional[str] = None
+):
+    """Update client with provided information.
+
+    Args:
+        client_id: ID of client to update
+        move_in_date: Move-in date to set or update to (if None, do not set)
+        layout: List of preferred layout types (if None, do not set)
+        price_ceiling: Budget (if None, do not set)
+
+    Returns:
+        Response from API
+
+    """
+    data = {}
+
+    if move_in_date:
+        data['move_in_date'] = move_in_date.strftime('%Y-%m-%d')
+    if layout:
+        data['layout'] = layout
+    if price_ceiling:
+        data['price_ceiling'] = price_ceiling
+
+    if not data:
+        # no client information was provided, so do not call API
+        return {}
+
+    url = f"https://nestiolistings.com/api/virtualagent/clients/{client_id}/edit/"
+
+    response = requests.put(
+        url, json=data, headers={'Content-Type': 'application/json'}, auth=(config.CHUCK_API_KEY, '')
+    )
+
+    return response.json()
