@@ -43,8 +43,18 @@ class UpdatePreferencesTool(BaseTool):
         Args:
             preferences: String containing client preferences
 
+        Returns:
+            Response back from the tool
+
         """
-        preferences = json.loads(preferences)
+        try:
+            preferences = json.loads(preferences)
+        except json.decoder.JSONDecodeError:
+            return ""
+
+        if not isinstance(preferences, dict):
+            return ""
+
         budget = preferences.get('budget')
         layout = preferences.get('layout')
         move_in_date = preferences.get('move_in_date')

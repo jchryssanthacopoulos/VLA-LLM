@@ -22,6 +22,7 @@ from VLA_LLM.config import OPENAI_API_KEY
 from VLA_LLM.tools.appointments import AppointmentCancelerTool
 from VLA_LLM.tools.appointments import AppointmentSchedulerAndAvailabilityTool
 from VLA_LLM.tools.appointments import CurrentTimeTool
+from VLA_LLM.tools.listings import AvailableApartmentsTool
 from VLA_LLM.tools.preferences import UpdatePreferencesTool
 
 
@@ -83,7 +84,7 @@ class ChatConversationalVLAAgent:
         community_info = get_community_info(community_id)
         community_info_prompt = community_dict_to_prompt(community_info)
 
-        prompt_template = prompts.prompt_two_tool_explicit.format(community_info=community_info_prompt)
+        prompt_template = prompts.prompt_tools_with_listings.format(community_info=community_info_prompt)
 
         chat_tools = [
             CurrentTimeTool(),
@@ -96,6 +97,11 @@ class ChatConversationalVLAAgent:
             AppointmentCancelerTool(
                 client_id=client_id,
                 api_key=api_key
+            ),
+            AvailableApartmentsTool(
+                client_id=client_id,
+                community_id=community_id,
+                community_timezone=community_info.get('timezone')
             )
         ]
 
