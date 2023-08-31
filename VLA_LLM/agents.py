@@ -64,6 +64,8 @@ class ZeroShotVLAAgent:
 
 class ChatConversationalVLAAgent:
 
+    FALLBACK_RESPONSE = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
+
     def __init__(
             self, client_id: int, group_id: int, community_id: int, api_key: str, message_hist: List, temperature: float
     ):
@@ -85,23 +87,9 @@ class ChatConversationalVLAAgent:
         community_timezone = community_info.get('timezone')
         community_info_prompt = community_dict_to_prompt(community_info)
 
-        prompt_template = prompts.prompt_tools_with_listings.format(community_info=community_info_prompt)
+        prompt_template = prompts.prompt_tools_minimal.format(community_info=community_info_prompt)
 
-        from VLA_LLM.tools.appointments import AppointmentSchedulerTool
-        from VLA_LLM.tools.appointments import AppointmentAvailabilityTool
         chat_tools = [
-            CurrentTimeTool(),
-            # AppointmentSchedulerTool(
-            #     client_id=client_id,
-            #     group_id=group_id,
-            #     api_key=api_key,
-            #     community_timezone=community_timezone
-            # ),
-            # AppointmentAvailabilityTool(
-            #     group_id=group_id,
-            #     api_key=api_key,
-            #     community_timezone=community_timezone
-            # ),
             AppointmentSchedulerAndAvailabilityTool(
                 client_id=client_id,
                 group_id=group_id,
@@ -143,7 +131,9 @@ class ChatConversationalVLAAgent:
             UpdatePreferencesTool(client_id=client_id, community_timezone=community_info.get('timezone'))
         ]
 
-        self.function_agent = initialize_agent(func_tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True)
+        self.function_agent = initialize_agent(
+            func_tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True, max_iterations=3
+        )
 
     def respond(self, message: str) -> str:
         """Respond to given inquiry.
@@ -160,13 +150,14 @@ class ChatConversationalVLAAgent:
         except OutputParserException as e:
             match = re.match("Could not parse LLM output: (?P<message>(.|\n)*)", str(e))
             if match:
-                response = match.groupdict()['message']
+                message = match.groupdict().get('message')
+                response = message if message else self.FALLBACK_RESPONSE
             else:
                 # fall back to default
-                response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
+                response = self.FALLBACK_RESPONSE
 
         if response == 'Agent stopped due to iteration limit or time limit.':
-            response = "I'm sorry, but I couldn't quite understand that. Can you please repeat your question?"
+            response = self.FALLBACK_RESPONSE
 
         # call function agent
         self.function_agent.run(input=message)
