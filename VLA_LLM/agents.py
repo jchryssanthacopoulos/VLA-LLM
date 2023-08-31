@@ -82,12 +82,26 @@ class ChatConversationalVLAAgent:
 
         # get community info prompt
         community_info = get_community_info(community_id)
+        community_timezone = community_info.get('timezone')
         community_info_prompt = community_dict_to_prompt(community_info)
 
         prompt_template = prompts.prompt_tools_with_listings.format(community_info=community_info_prompt)
 
+        from VLA_LLM.tools.appointments import AppointmentSchedulerTool
+        from VLA_LLM.tools.appointments import AppointmentAvailabilityTool
         chat_tools = [
             CurrentTimeTool(),
+            # AppointmentSchedulerTool(
+            #     client_id=client_id,
+            #     group_id=group_id,
+            #     api_key=api_key,
+            #     community_timezone=community_timezone
+            # ),
+            # AppointmentAvailabilityTool(
+            #     group_id=group_id,
+            #     api_key=api_key,
+            #     community_timezone=community_timezone
+            # ),
             AppointmentSchedulerAndAvailabilityTool(
                 client_id=client_id,
                 group_id=group_id,
@@ -101,7 +115,7 @@ class ChatConversationalVLAAgent:
             AvailableApartmentsTool(
                 client_id=client_id,
                 community_id=community_id,
-                community_timezone=community_info.get('timezone')
+                community_timezone=community_timezone
             )
         ]
 
