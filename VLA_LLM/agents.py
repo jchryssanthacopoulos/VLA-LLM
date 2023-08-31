@@ -144,7 +144,7 @@ class ChatConversationalVLAAgent:
         try:
             response = self.chat_agent.run(input=message)
         except OutputParserException as e:
-            match = re.match("Could not parse LLM output: (?P<message>.*)", str(e))
+            match = re.match("Could not parse LLM output: (?P<message>(.|\n)*)", str(e))
             if match:
                 response = match.groupdict()['message']
             else:
