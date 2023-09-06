@@ -5,6 +5,22 @@ using a large language model.
 
 ## Installation
 
+### With Docker
+
+To build the Docker image, run
+
+```
+docker-compose build
+```
+
+To run the container, with the ability to stop at breakpoints, enter
+
+```
+docker-compose run --service-ports app
+```
+
+### Without Docker
+
 To install the package, create and activate a virtual environment, then run
 
 ```

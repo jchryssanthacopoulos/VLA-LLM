@@ -1365,3 +1365,132 @@ class AppointmentDateConverter(DateConverter):
             message_day = message_day + timedelta(days=days_until)
 
             return message_day
+
+
+class MoveInDateConverter(DateConverter):
+    """Extend the Date converter for move in date specific date conversions"""
+
+    def __init__(self, **kwargs):
+        """Call base class constructor and define the filtering order
+
+        Args:
+            **kwargs: Any keyword arguments to override defaults of baseclass DateConverter
+
+        """
+        super().__init__(**kwargs)
+        self.filter_sieve_order = [
+            self._weekday_converter,
+            self._early_mid_late_month,
+            self._time_qualifier,
+            self._exception_safe_date_parse,
+            self._weekend_converter,
+            self._end_of_month,
+            self._qualifier_exact_month,
+            self._asap,
+            self._space_delimted_month,
+            self._next_year
+        ]
+
+    def _month_day_year(self, date: str, message_day: datetime = None, **kwargs) -> Optional[DateTimeInformation]:
+        """Check for patterns like mm/dd/yy(yy) or mm-dd-yyyy
+
+        Args:
+            date: The date string to convert
+            message_day: The day that the message was sent
+
+        Returns:
+            DateTimeInformation object or None
+
+        """
+        if message_day is None:
+            return None
+
+        month_day_year_pattern = r"(?P<month>\d{1,2})(-|\/)(?P<day>\d{1,2})((-|\/)(?P<year>\d{2,4}))?"
+
+        if kwargs.get('exact_match') is True:
+            month_day_year_pattern = f"^{month_day_year_pattern}$"
+
+        match = re.search(month_day_year_pattern, date, re.IGNORECASE)
+
+        if not match:
+            return
+
+        match_dict = match.groupdict()
+
+        if match_dict["year"]:
+            if len(match_dict["year"]) == 4:
+                year = int(match_dict["year"])
+            else:
+                year = int(str(message_day.year)[:2] + match_dict["year"])
+        else:
+            year = message_day.year
+
+        parsed_date = datetime(year=year, month=int(match_dict["month"]), day=int(match_dict["day"]))
+
+        return DateTimeInformation().set_as_date(parsed_date)
+
+    def _this_next_month(self, date: str, message_day: datetime = None, **kwargs) -> Optional[DateTimeInformation]:
+        """Check for patterns like 'this month' or 'next month'
+
+        Args:
+            date: The date string to convert
+            message_day: The day that the message was sent
+
+        Returns:
+            DateTimeInformation object or None
+
+        """
+        if message_day is None:
+            return None
+
+        month_pattern = r"(?P<month_qualifier>this|next) month"
+
+        if kwargs.get('exact_match') is True:
+            month_pattern = f"^{month_pattern}$"
+
+        match = re.search(month_pattern, date, re.IGNORECASE)
+
+        if not match:
+            return
+
+        match_dict = match.groupdict()
+
+        if message_day.month < 12:
+            parsed_date = datetime(year=message_day.year, month=message_day.month + 1, day=1)
+        else:
+            parsed_date = datetime(year=message_day.year + 1, month=1, day=1)
+
+        if match_dict["month_qualifier"] == "next":
+            return DateTimeInformation().set_as_date(parsed_date)
+
+        # this month
+        parsed_date -= timedelta(days=1)
+        return DateTimeInformation().set_as_date(parsed_date)
+
+    def _next_year(self, date: str, message_day: datetime = None, **kwargs) -> Optional[DateTimeInformation]:
+        """Check for patterns like 'next year'
+
+        Args:
+            date: The date string to convert
+            message_day: The day that the message was sent
+
+        Returns:
+            DateTimeInformation object or None
+
+        """
+        if message_day is None:
+            return None
+
+        next_year_pattern = r"next year"
+
+        if kwargs.get('exact_match') is True:
+            next_year_pattern = f"^{next_year_pattern}$"
+
+        match = re.search(next_year_pattern, date, re.IGNORECASE)
+
+        if not match:
+            return
+
+        parsed_date = datetime(year=message_day.year + 1, month=1, day=1)
+
+        return DateTimeInformation().set_as_date(parsed_date)

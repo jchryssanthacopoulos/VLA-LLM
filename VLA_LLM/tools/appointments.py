@@ -1,4 +1,4 @@
-"""Set of tools the agent has access to."""
+"""Tools related to scheduling a tour and finding availability."""
 
 import datetime
 from typing import Dict
@@ -24,19 +24,20 @@ from VLA_LLM.api import schedule_appointment
 
 
 class AppointmentsSchema(BaseModel):
-    appointment_time: str = Field(description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format")
+    appointment_time: str = Field(description="The prospect's desired appointment day and time")
 
 
 class AppointmentDateSchema(BaseModel):
-    appointment_date: str = Field(description="The prospect's desired appointment date in YYYY-MM-DD format")
+    appointment_day: str = Field(description="The prospect's desired appointment day")
 
 
 class AppointmentsAndAvailabilitySchema(BaseModel):
-    appointment_time: str = Field(description="The prospect's desired appointment time in YYYY-MM-DD HH:MM:SS format")
-
-
-class AppointmentsReschedulerSchema(BaseModel):
-    appointment_time: str = Field(description="Time to reschedule prospect's existing appointment to")
+    appointment_day: str = Field(
+        description="The prospect's desired appointment day like 'tomorrow', 'Monday', or 10/1"
+    )
+    appointment_time: Optional[str] = Field(
+        description="The prospect's desired appointment time like 9am, 10:30, 3pm, or 1"
+    )
 
 
 class BaseSchedulerTool:
@@ -52,7 +53,10 @@ class BaseSchedulerTool:
     AGENT_RESPONSE_TOUR_SAME_TIME = "It looks like you already have an appointment at that time."
     AGENT_RESPONSE_TIME_UNAVAILABLE = "Appointment could not be booked because appointment time is unavailable."
     AGENT_RESPONSE_NO_AVAILABLE_TIMES = "There are no available times on the requested date."
-    AGENT_RESPONSE_NEXT_AVAILABLE_TIMES = "The next available appointment times on that date are {avail_times}."
+    AGENT_RESPONSE_NEXT_AVAILABLE_TIMES = (
+        "The next available appointment times on that date are {avail_times}. Would you like to schedule an "
+        "appointment for one of these times?"
+    )
     AGENT_RESPONSE_SHORT_NOTICE = (
         "Unfortunately, you can't book a tour with such short notice. Can you provide another time?"
     )
@@ -130,6 +134,20 @@ class BaseSchedulerTool:
 
         return self.AGENT_RESPONSE_NEXT_AVAILABLE_TIMES.format(avail_times=', '.join(appt_times))
 
+    def convert_date(self, appointment_time: str, community_timezone: str) -> Optional[DateTimeInformation]:
+        appointment_time_converter = AppointmentDateConverter(am_to_pm_threshold=8)
+
+        message_timestamp = datetime.datetime.now(tz=pytz.UTC)
+        dates = appointment_time_converter.transform_dates_to_date_time_info(
+            [appointment_time], message_timestamp=message_timestamp, community_timezone=community_timezone
+        )
+
+        if not dates:
+            return
+
+        # return first date
+        return dates[0]
+
     def _parse_scheduling_errors(self, errors: Dict) -> str:
         """Parse scheduling error and return response.
 
@@ -188,69 +206,10 @@ class AppointmentSchedulerTool(BaseTool, BaseSchedulerTool):
 
     name = "appointment_scheduler"
     description = (
-        "Used for scheduling appointments for prospects. Use this instead of the availability tool if the prospect "
-        "provides an exact appointment time, not just a date. Appointment time must be converted into YYYY-MM-DD "
-        "HH:MM:SS format before using."
+        "Used for scheduling appointments for prospects. When the prospect asks to schedule an appointment for a "
+        "specific day and time, pass their appointment day and time as parameters into this tool."
     )
     args_schema: Type[AppointmentsSchema] = AppointmentsSchema
-    handle_tool_error = True
-
-    # add new fields to be passed in when instantiating the class
-    client_id: int
-    group_id: int
-
-    def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        # check if time is in the correct format
-        try:
-            d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d %H:%M:%S')
-        except:
-            raise ToolException(
-                "Appointment time is not in the correct format. "
-                "Provide the appointment time in YYYY-MM-DD HH:MM:SS format and try again."
-            )
-
-        return self.try_to_book_for_time(d, self.client_id, self.group_id)
-
-    async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Use the tool asynchronously."""
-        return "Not implemented"
-
-
-class AppointmentAvailabilityTool(BaseTool, BaseSchedulerTool):
-    """Allows the agent to check appointment availability for a given date."""
-
-    name = "appointment_availability"
-    description = "Used for checking availability of appointments on prospect's desired appointment date"
-    args_schema: Type[AppointmentDateSchema] = AppointmentDateSchema
-    handle_tool_error = True
-
-    # add new fields to be passed in when instantiating the class
-    group_id: int
-    api_key: str
-
-    def _run(self, appointment_date: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
-        """Use the tool."""
-        try:
-            d = datetime.datetime.strptime(appointment_date, '%Y-%m-%d')
-        except:
-            raise ToolException(
-                "Appointment date is not in the correct format. "
-                "The agent should provide it in YYYY-MM-DD format, then run again."
-            )
-
-        return self.get_available_appointment_times(d, self.group_id, self.api_key)
-
-    async def _arun(self, appointment_date: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
-        """Use the tool asynchronously."""
-        return "Not implemented"
-
-
-class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
-    """Allows the agent to book an appointment or check appointment availability."""
-
-    name = "appointment_scheduler_availability"
-    description = "Used for scheduling appointments for prospects or checking appointment availability."
-    args_schema: Type[AppointmentsAndAvailabilitySchema] = AppointmentsAndAvailabilitySchema
     handle_tool_error = True
 
     # add new fields to be passed in when instantiating the class
@@ -259,7 +218,7 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
     api_key: str
     community_timezone: str
 
-    def _run(self, appointment_time: str, run_manager: Optional[CallbackManagerForToolRun] = None) -> str:
+    def _run(self, appointment_time: str) -> str:
         """Try to schedule for provided time."""
         # first check if client has an appointment
         appointment_id = None
@@ -269,61 +228,109 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
             # for simplicity, just look at first tour
             appointment_id = client_appointments[0]['id']
 
-        # check if time is in the correct format
-        try:
-            d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d %H:%M:%S')
-        except:
-            try:
-                d = datetime.datetime.strptime(appointment_time, '%A %Y-%m-%d %H:%M:%S')
-            except:
-                try:
-                    d = datetime.datetime.strptime(appointment_time, '%Y-%m-%d')
-                except:
-                    # try to convert provided time into datetime object manually
-                    date = self._convert_date(appointment_time)
+        date = self.convert_date(appointment_time, self.community_timezone)
 
-                    if date:
-                        if date.is_date():
-                            d = date.datetime_min
-                            return self.get_available_appointment_times(d, self.group_id, self.api_key)
-                        elif date.is_exact_datetime():
-                            d = date.datetime_min
-                            return self.try_to_book_for_time(
-                                d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
-                            )
-
-                    raise ToolException(
-                        "Appointment date is not in the correct format. "
-                        "The agent should provide it in YYYY-MM-DD format, then run again."
-                    )
-
-                return self.get_available_appointment_times(d, self.group_id, self.api_key)
-
+        if date and date.is_exact_datetime():
+            d = date.datetime_min
             return self.try_to_book_for_time(
                 d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
             )
 
-        return self.try_to_book_for_time(
-            d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
+        raise ToolException(
+            "Can you please tell me about what your desired appointment time is?"
         )
 
-    async def _arun(self, appointment_time: str, run_manager: Optional[AsyncCallbackManagerForToolRun] = None) -> str:
+    async def _arun(self, appointment_day: str, appointment_time: str) -> str:
         """Use the tool asynchronously."""
         return "Not implemented"
 
-    def _convert_date(self, appointment_time: str) -> Optional[DateTimeInformation]:
-        appointment_time_converter = AppointmentDateConverter(am_to_pm_threshold=8)
 
-        message_timestamp = datetime.datetime.now(tz=pytz.UTC)
-        dates = appointment_time_converter.transform_dates_to_date_time_info(
-            [appointment_time], message_timestamp=message_timestamp, community_timezone=self.community_timezone
+class AppointmentAvailabilityTool(BaseTool, BaseSchedulerTool):
+    """Allows the agent to check appointment availability for a given date."""
+
+    name = "appointment_availability"
+    description = (
+        "Used for checking availability of appointments on prospect's desired appointment date. When the prospect "
+        "asks if there are tours available on some day, pass the day into this tool to tell you the availability "
+        "to return to the prospect."
+    )
+    args_schema: Type[AppointmentDateSchema] = AppointmentDateSchema
+    handle_tool_error = True
+
+    # add new fields to be passed in when instantiating the class
+    group_id: int
+    api_key: str
+    community_timezone: str
+
+    def _run(self, appointment_day: str) -> str:
+        """Use the tool."""
+        date = self.convert_date(appointment_day, self.community_timezone)
+
+        if date and date.is_date():
+            d = date.datetime_min
+            return self.get_available_appointment_times(d, self.group_id, self.api_key)
+
+        raise ToolException(
+            "Can you please tell me about what your desired appointment day is?"
         )
 
-        if not dates:
-            return
+    async def _arun(self, appointment_day: str) -> str:
+        """Use the tool asynchronously."""
+        return "Not implemented"
 
-        # return first date
-        return dates[0]
+
+class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
+    """Allows the agent to book an appointment or check appointment availability."""
+
+    name = "appointment_scheduler_availability"
+    description = (
+        "Used for scheduling appointments for prospects or checking appointment availability. "
+        "When the prospect asks to schedule an appointment for a given date, pass the appointment day in as a "
+        "parameter. When they also mention their preferred appointment time, pass appointment time in as the second "
+        "parameter."
+    )
+    args_schema: Type[AppointmentsAndAvailabilitySchema] = AppointmentsAndAvailabilitySchema
+    handle_tool_error = True
+
+    # add new fields to be passed in when instantiating the class
+    client_id: int
+    group_id: int
+    api_key: str
+    community_timezone: str
+
+    def _run(self, appointment_day: str, appointment_time: Optional[str] = None) -> str:
+        """Try to schedule for provided time."""
+        # first check if client has an appointment
+        appointment_id = None
+
+        client_appointments = get_client_appointments(self.client_id, self.api_key)
+        if client_appointments:
+            # for simplicity, just look at first tour
+            appointment_id = client_appointments[0]['id']
+
+        appt_datetime_str = appointment_day
+        if appointment_time:
+            appt_datetime_str += f" {appointment_time}"
+
+        date = self.convert_date(appt_datetime_str, self.community_timezone)
+
+        if date:
+            if date.is_date():
+                d = date.datetime_min
+                return self.get_available_appointment_times(d, self.group_id, self.api_key)
+            elif date.is_exact_datetime():
+                d = date.datetime_min
+                return self.try_to_book_for_time(
+                    d, self.client_id, self.group_id, appointment_id=appointment_id, api_key=self.api_key
+                )
+
+        raise ToolException(
+            "I didn't understand the date or time you provided. Can you please rephrase it?"
+        )
+
+    async def _arun(self, appointment_day: str, appointment_time: Optional[str] = None) -> str:
+        """Use the tool asynchronously."""
+        return "Not implemented"
 
 
 class AppointmentCancelerTool(BaseTool, BaseSchedulerTool):
