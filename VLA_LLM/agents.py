@@ -21,7 +21,6 @@ from VLA_LLM.community_info import community_dict_to_prompt
 from VLA_LLM.config import OPENAI_API_KEY
 from VLA_LLM.tools.appointments import AppointmentCancelerTool
 from VLA_LLM.tools.appointments import AppointmentSchedulerAndAvailabilityTool
-from VLA_LLM.tools.appointments import CurrentTimeTool
 from VLA_LLM.tools.listings import AvailableApartmentsTool
 from VLA_LLM.tools.preferences import UpdatePreferencesTool
 
@@ -80,7 +79,7 @@ class ChatConversationalVLAAgent:
             temperature: Temperature to use in underlying LLM
 
         """
-        llm = ChatOpenAI(temperature=temperature, openai_api_key=OPENAI_API_KEY)
+        self.llm = ChatOpenAI(temperature=temperature, openai_api_key=OPENAI_API_KEY)
 
         # get community info prompt
         community_info = get_community_info(community_id)
@@ -115,7 +114,7 @@ class ChatConversationalVLAAgent:
 
         self.chat_agent = initialize_agent(
             agent='chat-conversational-react-description',
-            tools=[], llm=llm, verbose=True, memory=memory, max_iterations=3
+            tools=[], llm=self.llm, verbose=True, memory=memory, max_iterations=3
         )
 
         new_prompt = self.chat_agent.agent.create_prompt(
@@ -130,10 +129,25 @@ class ChatConversationalVLAAgent:
         func_tools = [
             UpdatePreferencesTool(client_id=client_id, community_timezone=community_info.get('timezone'))
         ]
-
         self.function_agent = initialize_agent(
-            func_tools, llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True, max_iterations=3
+            func_tools, self.llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True, max_iterations=3
         )
+
+        # save disable prompt to use the base LLM to make predictions about disabling
+        self.prompt_disable = prompts.prompt_disable_vla.format(community_info=community_info_prompt)
+
+    def should_disable(self, message: str) -> str:
+        """Indicate whether the agent should disable.
+
+        Args:
+            message: Prospect message
+
+        Returns:
+            Whether to disable
+
+        """
+        disable_category = self.llm.predict(self.prompt_disable.format(prospect_message=message))
+        return disable_category == 'Unanswerable'
 
     def respond(self, message: str) -> str:
         """Respond to given inquiry.
