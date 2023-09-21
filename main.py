@@ -92,7 +92,10 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
         messages,
         temperature
     )
-    response = agent.respond(inputs.message)
+
+    # check whether the agent should disable
+    should_disable = agent.should_disable(inputs.message)
+    response = agent.respond(inputs.message) if not should_disable else 'Disable VLA'
 
     # update and save conversation history
     conversation_history.append({
@@ -103,7 +106,8 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
 
     return {
         'response': {
-            'text': [response]
+            'text': [response],
+            'disable': should_disable
         }
     }
 
