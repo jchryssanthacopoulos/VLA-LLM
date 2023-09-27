@@ -133,8 +133,7 @@ class BaseSchedulerTool:
 
         # update agent state
         agent_state = State(self.community_id, self.client_id)
-        agent_state.update_actions('Available appointment times')
-        agent_state.save()
+        agent_state.update_actions('Available appointment times').save()
 
         if not appt_times:
             return self.AGENT_RESPONSE_NO_AVAILABLE_TIMES

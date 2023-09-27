@@ -3,8 +3,8 @@
 import json
 from typing import List
 
-from langchain.schema.messages import HumanMessage
 from langchain.schema.messages import AIMessage
+from langchain.schema.messages import HumanMessage
 from redis_om import get_redis_connection
 
 
