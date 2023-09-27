@@ -91,6 +91,7 @@ class ChatConversationalVLAAgent:
         chat_tools = [
             AppointmentSchedulerAndAvailabilityTool(
                 client_id=client_id,
+                community_id=community_id,
                 group_id=group_id,
                 api_key=api_key,
                 community_timezone=community_info.get('timezone')

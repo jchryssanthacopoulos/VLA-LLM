@@ -15,6 +15,7 @@ from VLA_LLM.api import update_client
 from VLA_LLM.dates import MoveInDateConverter
 from VLA_LLM.entity_normalization import normalize_budget
 from VLA_LLM.entity_normalization import normalize_layout
+from VLA_LLM.state import State
 from VLA_LLM.utils import message as message_utils
 
 
@@ -71,6 +72,10 @@ class AvailableApartmentsTool(BaseTool):
 
         # update guest card
         update_client(self.client_id, price_ceiling=budget, layout=layout, move_in_date=move_in_date)
+
+        # update agent state
+        agent_state = State(self.community_id, self.client_id)
+        agent_state.update_actions('Apartment search').save()
 
         units = get_available_units(self.community_id, move_in_date, layout, budget)
         if not units:

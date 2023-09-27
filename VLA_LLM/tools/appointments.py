@@ -14,13 +14,14 @@ from pydantic import BaseModel
 import pytz
 
 from VLA_LLM import config
-from VLA_LLM.dates import AppointmentDateConverter
-from VLA_LLM.dates import DateTimeInformation
 from VLA_LLM.api import available_appointment_times
 from VLA_LLM.api import cancel_appointment
 from VLA_LLM.api import get_client_appointments
 from VLA_LLM.api import reschedule_appointment
 from VLA_LLM.api import schedule_appointment
+from VLA_LLM.dates import AppointmentDateConverter
+from VLA_LLM.dates import DateTimeInformation
+from VLA_LLM.state import State
 
 
 class AppointmentsSchema(BaseModel):
@@ -101,6 +102,10 @@ class BaseSchedulerTool:
             scheduled_appt = response.get("appointment", {}).get("start")
 
         if scheduled_appt:
+            # update agent state
+            agent_state = State(self.community_id, self.client_id)
+            agent_state.update_actions('Appointment scheduled').save()
+
             d = datetime.datetime.strptime(scheduled_appt, '%Y-%m-%dT%H:%M:%S')
             return self.AGENT_RESPONSE_SUCCESSFULLY_SCHEDULED.format(
                 apt_time=d.strftime('%H:%M'), apt_date=d.strftime('%Y-%m-%d')
@@ -125,6 +130,11 @@ class BaseSchedulerTool:
             return self.AGENT_RESPONSE_BAD_DATE
 
         appt_times = available_appointment_times(datetime_obj, group_id, api_key)
+
+        # update agent state
+        agent_state = State(self.community_id, self.client_id)
+        agent_state.update_actions('Available appointment times')
+        agent_state.save()
 
         if not appt_times:
             return self.AGENT_RESPONSE_NO_AVAILABLE_TIMES
@@ -294,6 +304,7 @@ class AppointmentSchedulerAndAvailabilityTool(BaseTool, BaseSchedulerTool):
 
     # add new fields to be passed in when instantiating the class
     client_id: int
+    community_id: int
     group_id: int
     api_key: str
     community_timezone: str
