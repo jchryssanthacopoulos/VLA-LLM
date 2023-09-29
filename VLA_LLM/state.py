@@ -53,6 +53,16 @@ class State:
 
         return messages
 
+    def set_current_actions(self, actions: List):
+        """Set the actions for the current message to given actions.
+
+        Args:
+            actions: Actions to set
+
+        """
+        num_prospect_messages = str(self.agent_state[self.NUM_PROSPECT_MESSAGES])
+        self.agent_state[self.ACTIONS][num_prospect_messages] = actions
+
     def update_actions(self, action: str):
         """Update state with given action.
 
@@ -60,15 +70,14 @@ class State:
             action: Action to update state with
 
         """
-        num_prospect_messages = str(self.agent_state[self.NUM_PROSPECT_MESSAGES])
-        current_actions = self.agent_state[self.ACTIONS].get(num_prospect_messages)
+        current_actions = self.get_current_actions()
 
         if current_actions:
             current_actions.append(action)
         else:
             current_actions = [action]
 
-        self.agent_state[self.ACTIONS][num_prospect_messages] = current_actions
+        self.set_current_actions(current_actions)
 
         return self
 
