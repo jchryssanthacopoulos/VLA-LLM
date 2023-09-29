@@ -2,6 +2,7 @@
 
 import datetime
 from typing import Dict
+from typing import List
 from typing import Optional
 from typing import Type
 
@@ -65,6 +66,9 @@ class BaseSchedulerTool:
         "I'm sorry, I had some difficulty understanding the date you provide. Can you please repeat it?"
     )
 
+    schedule_tour_action_name = "Tour scheduled for {apt_time} on {apt_date}"
+    available_times_action_name = "Available appointment times returned {avail_times}"
+
     def try_to_book_for_time(
             self, datetime_obj: datetime.datetime, client_id: int, group_id: int, appointment_id: Optional[int] = None,
             api_key: Optional[str] = None
@@ -102,14 +106,14 @@ class BaseSchedulerTool:
             scheduled_appt = response.get("appointment", {}).get("start")
 
         if scheduled_appt:
-            # update agent state
-            agent_state = State(self.community_id, self.client_id)
-            agent_state.update_actions('Appointment scheduled').save()
-
             d = datetime.datetime.strptime(scheduled_appt, '%Y-%m-%dT%H:%M:%S')
-            return self.AGENT_RESPONSE_SUCCESSFULLY_SCHEDULED.format(
-                apt_time=d.strftime('%H:%M'), apt_date=d.strftime('%Y-%m-%d')
-            )
+            apt_time = d.strftime('%H:%M')
+            apt_date = d.strftime('%Y-%m-%d')
+
+            # update agent state
+            self._update_state_with_schedule_tour_action(apt_time, apt_date)
+
+            return self.AGENT_RESPONSE_SUCCESSFULLY_SCHEDULED.format(apt_time=apt_time, apt_date=apt_date)
 
         return self.AGENT_RESPONSE_PROBLEM_SCHEDULING
 
@@ -131,19 +135,28 @@ class BaseSchedulerTool:
 
         appt_times = available_appointment_times(datetime_obj, group_id, api_key)
 
+        # limit to maximum that should be displayed
+        appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
+
         # update agent state
-        agent_state = State(self.community_id, self.client_id)
-        agent_state.update_actions('Available appointment times').save()
+        self._update_state_with_available_times_action(appt_times)
 
         if not appt_times:
             return self.AGENT_RESPONSE_NO_AVAILABLE_TIMES
 
-        # limit to maximum that should be displayed
-        appt_times = appt_times[:config.MAX_AVAILABLE_APPOINTMENT_TIMES_TO_SHOW]
-
         return self.AGENT_RESPONSE_NEXT_AVAILABLE_TIMES.format(avail_times=', '.join(appt_times))
 
     def convert_date(self, appointment_time: str, community_timezone: str) -> Optional[DateTimeInformation]:
+        """Convert date from string to standard datetime object.
+
+        Args:
+            appointment_time: Time to convert
+            community_timezone: Timezone of community
+
+        Returns:
+            Converted date
+
+        """
         appointment_time_converter = AppointmentDateConverter(am_to_pm_threshold=8)
 
         message_timestamp = datetime.datetime.now(tz=pytz.UTC)
@@ -208,6 +221,33 @@ class BaseSchedulerTool:
             return False
 
         return True
+
+    def _update_state_with_schedule_tour_action(self, apt_time: str, apt_date: str):
+        """Update agent state with schedule tour action.
+
+        Args:
+            apt_time: Time of appointment
+            apt_date: Date of appointment
+
+        """
+        action_name = self.schedule_tour_action_name.format(apt_time=apt_time, apt_date=apt_date)
+        agent_state = State(self.community_id, self.client_id)
+        agent_state.update_actions(action_name).save()
+
+    def _update_state_with_available_times_action(self, appt_times: List[str]):
+        """Update agent state with available times action.
+
+        Args:
+            apt_times: Appointment times returned from the API
+
+        """
+        if not appt_times:
+            action_name = self.available_times_action_name.format(avail_times="no times")
+        else:
+            action_name = self.available_times_action_name.format(avail_times=', '.join(appt_times))
+
+        agent_state = State(self.community_id, self.client_id)
+        agent_state.update_actions(action_name).save()
 
 
 class AppointmentSchedulerTool(BaseTool, BaseSchedulerTool):
