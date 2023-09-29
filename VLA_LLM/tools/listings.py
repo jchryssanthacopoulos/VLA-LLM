@@ -2,6 +2,7 @@
 
 import datetime
 from typing import Dict
+from typing import List
 from typing import Optional
 from typing import Type
 
@@ -38,6 +39,8 @@ class AvailableApartmentsTool(BaseTool):
     args_schema: Type[PreferencesSchema] = PreferencesSchema
     handle_tool_error = True
 
+    action_name = 'Apartment search returned {units}'
+
     # add new fields to be passed in when instantiating the class
     client_id: int
     community_id: int
@@ -73,22 +76,19 @@ class AvailableApartmentsTool(BaseTool):
         # update guest card
         update_client(self.client_id, price_ceiling=budget, layout=layout, move_in_date=move_in_date)
 
-        # update agent state
-        agent_state = State(self.community_id, self.client_id)
-        agent_state.update_actions('Apartment search').save()
-
+        # search for units
         units = get_available_units(self.community_id, move_in_date, layout, budget)
+
+        # update agent state with action
+        self._update_state_with_actions(units)
+
         if not units:
-            return (
-                "I'm sorry, but there are no available apartments matching your requirements."
-            )
+            return "I'm sorry, but there are no available apartments matching your requirements."
 
         display_dates = not bool(move_in_date)
         displayable_units = self._display_listings(units, display_dates)
 
-        return (
-            f"Here are some available apartments matching your requirements:\n{displayable_units}"
-        )
+        return f"Here are some available apartments matching your requirements:\n{displayable_units}"
 
     async def _arun(self, budget: str, layout: str, move_in_date: str) -> str:
         """Use the tool asynchronously."""
@@ -154,3 +154,25 @@ class AvailableApartmentsTool(BaseTool):
             listings += f" - starts at ${message_utils.human_readable_cost(str(unit['price']))}"
 
         return listings
+
+    def _update_state_with_actions(self, units: List[Dict]):
+        """Update agent state with apartment search action.
+
+        Args:
+            units: Units to add to state
+
+        """
+        unit_numbers = [unit['unit_number'] for unit in units]
+
+        if unit_numbers:
+            if len(unit_numbers) == 1:
+                unit_numbers_fmt = f"unit {unit_numbers[0]}"
+            else:
+                unit_numbers_fmt = f"units {', '.join(unit_numbers)}"
+            action_desc = self.action_name.format(units=unit_numbers_fmt)
+        else:
+            action_desc = self.action_name.format(units='no units')
+
+        # update agent state with action
+        agent_state = State(self.community_id, self.client_id)
+        agent_state.update_actions(action_desc).save()

@@ -1,5 +1,6 @@
 """Methods for getting, updating, and setting state."""
 
+from copy import deepcopy
 import json
 from typing import List
 
@@ -34,7 +35,7 @@ class State:
 
         redis_state = self.redis.get(self.redis_key)
 
-        self.agent_state = json.loads(redis_state) if redis_state else self.DEFAULT_STATE
+        self.agent_state = json.loads(redis_state) if redis_state else deepcopy(self.DEFAULT_STATE)
 
     def get_current_actions(self) -> List:
         """Get set of actions for current prospect message."""
