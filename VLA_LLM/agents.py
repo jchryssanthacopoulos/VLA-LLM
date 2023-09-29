@@ -128,7 +128,9 @@ class ChatConversationalVLAAgent:
 
         # create function calling agent
         func_tools = [
-            UpdatePreferencesTool(client_id=client_id, community_timezone=community_info.get('timezone'))
+            UpdatePreferencesTool(
+                community_id=community_id, client_id=client_id, community_timezone=community_info.get('timezone')
+            )
         ]
         self.function_agent = initialize_agent(
             func_tools, self.llm, agent=AgentType.OPENAI_FUNCTIONS, verbose=True, max_iterations=3

@@ -74,7 +74,9 @@ class State:
         current_actions = self.get_current_actions()
 
         if current_actions:
-            current_actions.append(action)
+            if action not in current_actions:
+                # check for repeated action
+                current_actions.append(action)
         else:
             current_actions = [action]
 

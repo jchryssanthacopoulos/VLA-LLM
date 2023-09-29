@@ -92,7 +92,9 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
     if inputs.debug:
         actions = agent_state.get_current_actions()
         if actions:
-            response_with_debug += f"\n\nACTIONS:\n\t{', '.join(actions)}"
+            response_with_debug += "\n\n**** DEBUG INFO ****\n\n"
+            actions_fmt = '\n'.join(actions)
+            response_with_debug += f"ACTIONS:\n\t{actions_fmt}"
 
     # save state with new conversation history
     agent_state.update_conversation_history(inputs.message, response).increment_message_count().save()
