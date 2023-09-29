@@ -2,6 +2,7 @@
 
 import json
 import datetime
+from typing import List
 from typing import Optional
 from typing import Type
 
@@ -14,6 +15,7 @@ from VLA_LLM.api import update_client
 from VLA_LLM.dates import MoveInDateConverter
 from VLA_LLM.entity_normalization import normalize_budget
 from VLA_LLM.entity_normalization import normalize_layout
+from VLA_LLM.state import State
 
 
 class PreferencesSchema(BaseModel):
@@ -34,6 +36,7 @@ class UpdatePreferencesTool(BaseTool):
     handle_tool_error = True
 
     # add new fields to be passed in when instantiating the class
+    community_id: int
     client_id: int
     community_timezone: str
 
@@ -74,6 +77,11 @@ class UpdatePreferencesTool(BaseTool):
 
         update_client(self.client_id, price_ceiling=budget, layout=layout, move_in_date=move_in_date)
 
+        # update agent state with action
+        UpdatePreferencesTool.update_state_with_actions(
+            self.community_id, self.client_id, price_ceiling=budget, layout=layout, move_in_date=move_in_date
+        )
+
         return ""
 
     async def _arun(self, preferences: str) -> str:
@@ -94,3 +102,40 @@ class UpdatePreferencesTool(BaseTool):
             # return first valid date
             if d.is_date():
                 return d.datetime_min
+
+    @classmethod
+    def update_state_with_actions(
+            cls, community_id: int, client_id: int, move_in_date: Optional[datetime.datetime] = None,
+            layout: Optional[List] = None, price_ceiling: Optional[str] = None
+    ):
+        """Update agent state with guest card update action.
+
+        Args:
+            community_id: ID of community
+            client_id: ID of client
+            move_in_date: Desired move-in date
+            layout: List of preferred layout types
+            price_ceiling: Budget
+
+        """
+        preferences = ""
+
+        if move_in_date:
+            preferences += f"move-in date of {move_in_date.strftime('%Y-%m-%d')}"
+        if layout:
+            if preferences:
+                preferences += ", "
+            preferences += f"layout{'s' if len(layout) > 1 else ''} of {', '.join(layout)}"
+        if price_ceiling:
+            if preferences:
+                preferences += ", "
+            preferences += f"budget of {price_ceiling}"
+
+        if not preferences:
+            # if no preferences provided, do not update state
+            return
+
+        action_name = 'Guest card updated with {preferences}'.format(preferences=preferences)
+
+        agent_state = State(community_id, client_id)
+        agent_state.update_actions(action_name).save()

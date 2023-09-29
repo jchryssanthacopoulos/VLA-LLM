@@ -1,12 +1,9 @@
 """Main entry point into the server."""
 
-import json
 from typing import Optional
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from langchain.schema.messages import HumanMessage
-from langchain.schema.messages import AIMessage
 from pydantic import BaseModel
 from redis_om import get_redis_connection
 from redis_om import HashModel
@@ -17,6 +14,7 @@ from VLA_LLM.api import cancel_appointment
 from VLA_LLM.api import delete_client_preferences
 from VLA_LLM.api import enable_vla
 from VLA_LLM.api import get_client_appointments
+from VLA_LLM.state import State
 
 
 app = FastAPI()
@@ -52,6 +50,7 @@ class QueryVLAInputs(BaseModel):
     api_key: str
     message: str
     message_medium: Optional[str]
+    debug: Optional[bool]
 
 
 @app.post("/query-virtual-agent/")
@@ -68,45 +67,41 @@ async def query_virtual_agent(inputs: QueryVLAInputs):
     # make sure the VLA is enabled
     enable_vla(inputs.client_id, inputs.group_id)
 
-    redis_key = f"{inputs.community_id}:{inputs.client_id}"
-    redis_state = redis.get(redis_key)
+    # get conversation history
+    messages = State(inputs.community_id, inputs.client_id).get_memory_of_messages()
 
-    conversation_history = json.loads(redis_state) if redis_state else []
-
-    # most deterministic results
-    temperature = 0
-
-    # create memory
-    messages = []
-    for interaction in conversation_history:
-        messages.extend([
-            HumanMessage(content=interaction['human_message']),
-            AIMessage(content=interaction['ai_message'])
-        ])
-
+    # create agent
     agent = ChatConversationalVLAAgent(
         inputs.client_id,
         inputs.group_id,
         inputs.community_id,
         inputs.api_key,
         messages,
-        temperature
+        temperature=0  # most deterministic results
     )
 
     # check whether the agent should disable
     should_disable = agent.should_disable(inputs.message)
     response = agent.respond(inputs.message) if not should_disable else 'Disable VLA'
 
-    # update and save conversation history
-    conversation_history.append({
-        'human_message': inputs.message,
-        'ai_message': response
-    })
-    redis.set(redis_key, json.dumps(conversation_history))
+    # reload state (in case tools have updated it)
+    agent_state = State(inputs.community_id, inputs.client_id)
+
+    # add debug information
+    response_with_debug = response
+    if inputs.debug:
+        actions = agent_state.get_current_actions()
+        if actions:
+            response_with_debug += "\n\n**** DEBUG INFO ****\n\n"
+            actions_fmt = '\n'.join(actions)
+            response_with_debug += f"ACTIONS:\n\t{actions_fmt}"
+
+    # save state with new conversation history
+    agent_state.update_conversation_history(inputs.message, response).increment_message_count().save()
 
     return {
         'response': {
-            'text': [response],
+            'text': [response_with_debug],
             'disable': should_disable
         }
     }
